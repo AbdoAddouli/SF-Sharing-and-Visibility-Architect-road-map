@@ -1,0 +1,44 @@
+{
+  "name": "salesforce-sharing-visibility-architect-roadmap",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Salesforce Certified Platform Sharing and Visibility Architect (Plat-Arch-205) learning lab: OWD, role hierarchy, sharing rules, teams, Apex managed sharing, external users, permissions, scalability, and the Summer '26 / Winter '27 enforcement wave.",
+  "scripts": {
+    "lint": "eslint \"force-app/main/default/{aura,lwc}/**/*.js\" --no-error-on-unmatched-pattern",
+    "test": "npm run test:unit",
+    "test:unit": "sfdx-lwc-jest --passWithNoTests",
+    "test:unit:watch": "sfdx-lwc-jest --watch",
+    "test:unit:debug": "sfdx-lwc-jest --debug",
+    "test:unit:coverage": "sfdx-lwc-jest --coverage --passWithNoTests",
+    "check:syntax": "node --check docs/assets/curriculum.js && node --check docs/assets/answers.js",
+    "site": "node build/site.mjs",
+    "site:check": "node build/site.mjs --check",
+    "check": "npm run check:syntax && npm run site:check",
+    "prettier": "prettier --write \"**/*.{cls,cmp,component,css,html,js,json,md,page,trigger,xml,yaml,yml}\"",
+    "prettier:verify": "prettier --check \"**/*.{cls,cmp,component,css,html,js,json,md,page,trigger,xml,yaml,yml}\""
+  },
+  "devDependencies": {
+    "@lwc/eslint-plugin-lwc": "^3.1.0",
+    "@prettier/plugin-xml": "^3.4.1",
+    "@salesforce/eslint-config-lwc": "^4.0.0",
+    "@salesforce/eslint-plugin-aura": "^3.0.0",
+    "@salesforce/eslint-plugin-lightning": "^2.0.0",
+    "@salesforce/sfdx-lwc-jest": "^7.0.2",
+    "eslint": "^9.29.0",
+    "eslint-plugin-import": "^2.31.0",
+    "eslint-plugin-jest": "^28.14.0",
+    "prettier": "^3.5.3",
+    "prettier-plugin-apex": "^2.2.6"
+  },
+  "lint-staged": {
+    "**/*.{cls,cmp,component,css,html,js,json,md,page,trigger,xml,yaml,yml}": [
+      "prettier --write"
+    ],
+    "force-app/main/default/{aura,lwc}/**/*.js": [
+      "eslint --no-error-on-unmatched-pattern"
+    ],
+    "force-app/main/default/lwc/**": [
+      "sfdx-lwc-jest -- --bail --findRelatedTests --passWithNoTests"
+    ]
+  }
+}

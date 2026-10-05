@@ -1,0 +1,33 @@
+{
+  "orgName": "Vantage Health Group",
+  "edition": "Enterprise",
+  "features": ["PersonAccounts", "Communities", "FieldService", "Analytics"],
+  "settings": {
+    "lightningExperienceSettings": {
+      "enableS1DesktopEnabled": true
+    },
+    "communitiesSettings": {
+      "enableNetworksEnabled": true
+    },
+    "mobileSettings": {
+      "enableS1EncryptedStoragePref2": false
+    },
+    "sharingSettings": {
+      "defaultInternalAccess": "Private",
+      "defaultExternalAccess": "Private",
+      "enableInternalSharing": true,
+      "enableExternalSharing": true,
+      "enableApexSharing": true,
+      "enableFlowSharing": true,
+      "retainManualSharesOnTransfer": false
+    },
+    "securitySettings": {
+      "passwordPolicies": {
+        "enableSetPasswordInApi": false
+      },
+      "sessionSettings": {
+        "sessionTimeout": "120"
+      }
+    }
+  }
+}

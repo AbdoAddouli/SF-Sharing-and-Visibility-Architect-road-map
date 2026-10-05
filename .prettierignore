@@ -1,0 +1,37 @@
+# List files or directories below to ignore them when running prettier
+# More information: https://prettier.io/docs/en/ignore.html
+#
+
+**/staticresources/**
+.localdevserver
+.sfdx
+.sf
+.vscode
+
+coverage/
+
+# The interactive site under docs/ is hand-authored presentation and data code.
+#
+# It is NOT ignored to dodge formatting - it is ignored because reformatting it
+# destroys things prettier has no way to understand:
+#
+#   app.js      - template literals with hand-placed newlines that line up quiz
+#                 options and mock-exam chrome. Prettier reflows them and the
+#                 rendered HTML whitespace shifts.
+#   style.css   - one declaration per line, grouped by visual layer. Prettier
+#                 collapses it to as few lines as possible, which defeats the
+#                 grouping and makes the diff for a real style change unreadable.
+#   curriculum.js / answers.js - large curated data literals (100KB+). A prettier
+#                 pass produces a 10,000-line diff for a one-line content fix.
+#
+# These files are still checked, just by the tool that suits them:
+#   npm run check:syntax      (node --check on the authored data)
+#   npm run site:check        (build/site.mjs --check: curriculum/answers schema,
+#                              exercise id cross-references and generated-file freshness)
+#
+# docs/index.html is small and hand-authored, but it is excluded with the rest of
+# docs/ so the shell and the generated data cannot drift into a formatting fight.
+docs/
+
+# Generated: docs/assets/guides/ and docs/assets/answers/ are rewritten wholesale
+# by `node build/site.mjs`. Formatting them separately would fight the build.

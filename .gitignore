@@ -1,0 +1,35 @@
+# Salesforce
+.sfdx/
+.sf/
+.sfdx.json
+.localdevserver/
+deploy-options.json
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Tooling caches
+.pmdCache
+.eslintcache
+**/lwc/jsconfig.json
+**/__pycache__/
+**/.venv/
+**/venv/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+*.iml
+
+# Logs & temp
+logs/
+*.log
+coverage/
+tmp/
+.env
+.env.local

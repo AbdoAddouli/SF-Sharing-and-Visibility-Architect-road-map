@@ -1,0 +1,4987 @@
+/* ============================================================================
+ * curriculum.js — Salesforce Certified Platform Sharing and Visibility
+ *                  Architect academy (Plat-Arch-205)
+ * ----------------------------------------------------------------------------
+ * THE DATA CONTRACT (enforced at build time by the Abdo's Salesforce Academy
+ * hub: build/build-data.mjs + build/validate-bundle.mjs):
+ *
+ *   GUIDE: base URL the phase guides are served from. Consumed by the hub
+ *   (build/build-guides.mjs) to build "view source" links, so it must be
+ *   declared — every other academy declares one too.
+ *
+ *   ACADEMY: array of module objects, in order. `n` MUST equal the 1-based
+ *   position. Required on every module: id, n, title, icon, color (6-digit hex),
+ *   tagline, guide, exam, objectives, art, lessons, quiz.
+ *
+ *   lessons[]: { title, mins, blocks[] }.
+ *
+ *   blocks[] — ONLY these types (this is renderBlock() in docs/assets/app.js;
+ *   anything else renders as nothing at all):
+ *     p         { x }                     paragraph
+ *     h         { x }                     section heading
+ *     list      { items[] }               bullet list
+ *     num       { items[] }               numbered list
+ *     table     { head[], rows[][] }      table; every row must have head.length cells
+ *     code      { lang, x }               code block; `lang` picks the highlighter
+ *     callout   { kind: 'tip'|'warn', x } highlighted note
+ *     selfcheck { q, a }                  "check yourself" reveal
+ *     ex        { id, title, obj, stars, steps[], verify }
+ *     proj      { id, title, obj, stars, reqs[], success }
+ *     case      { title, problem, solution, steps[], gotcha, org?, exam? }
+ *                real-world use case. Reference material, NOT a graded activity,
+ *                so it carries no id, no stars and no self-rating.
+ *
+ *   `ex.id` / `proj.id` is the primary key: EXERCISE_ANSWERS is keyed by it and
+ *   the self-rating stars are stored under it. Must be unique across the WHOLE
+ *   academy. Convention: "1.3" = Phase 01 exercise 3, "20.2" = Phase 20 project 2.
+ *
+ *   quiz.questions[]: { q, opts[2+], a, why }.
+ *     `a` is an option INDEX; use an ARRAY of 2+ indices for multi-select, which
+ *     is graded on the exact set. `why` is mandatory — instant feedback is the
+ *     entire point of the quiz.
+ *
+ *   `art` is the "real artifacts in this repo" grid on the phase page. Every
+ *   entry points at metadata this phase adds or uses, so the links stay live.
+ *
+ * ----------------------------------------------------------------------------
+ * THE BLUEPRINT. The official exam guide (Salesforce Help id=005298977) is
+ * aligned to the Winter '23 release and divides the exam into four domains:
+ *
+ *     Access to Records ......................................... 39%
+ *     Permissions to Standard Objects, Custom Objects & Fields .. 27%
+ *     Implications of Security Model Choice ..................... 18%
+ *     Access to Other Data ...................................... 16%
+ *
+ * Phases 2-9, 10-14, 15-16 and 17 map onto those four domains in that order,
+ * one official objective per lesson cluster, so the weightings stay defensible.
+ * Phases 1, 18, 19 and 20 carry no exam weight: Phase 1 is orientation,
+ * Phases 18-19 are the release-delta layer (the platform moved enormously after
+ * Winter '23 and an architect who only knows Winter '23 will design for a
+ * platform that no longer exists), and Phase 20 is the capstone.
+ *
+ * ----------------------------------------------------------------------------
+ * THE SCENARIO. Every phase builds into ONE org: Vantage Health Group, a
+ * multi-entity health insurer. Three legal subsidiaries, 2.4M members, 380k
+ * claims, 1,200 field agents, 4,000 external brokers on a partner portal, a
+ * member portal, a guest-facing provider directory, an Agentforce triage agent
+ * and a Data 360 care-pathway lake. The org is deliberately compliance-heavy
+ * (HIPAA on Member__c, PCI on card fields) and deliberately awkward (a
+ * 40,000-record "Grand Central" account, a recently acquired rival whose data
+ * must stay invisible to legacy staff) because every one of the 18 official
+ * objectives has a business reason to exist here. Nothing is taught in a vacuum.
+ * ========================================================================== */
+
+const GUIDE = 'https://github.com/AbdoAddouli/SF-Sharing-and-Visibility-Architect-road-map/blob/main/docs/guide/';
+
+const ACADEMY = [
+  /* ─────────────────────────── PHASE 1 ─────────────────────────── */
+  {
+    id: 'mindset',
+    n: 1,
+    title: "The Architect's Security Mindset",
+    icon: '🧭',
+    color: '#0EA5E9',
+    tagline: 'The blueprint, the reasoning technique, and the one idea the whole exam rests on',
+    exam: 'orientation',
+    guide: '01-Mindset.md',
+    art: [
+      { label: 'Access model canvas', href: 'docs/architecture/access-model-canvas.md' },
+      { label: 'Plat-Arch-205 exam guide (local capture)', href: 'references/plat-arch-205-exam-guide.md' }
+    ],
+    objectives: [
+      'State what a Sharing & Visibility Architect is paid to deliver, and why it is not a list of features',
+      'Reproduce the four official exam domains with their exact weightings and the 18 objectives beneath them',
+      'Apply the additive-only rule: explain why no mechanism can ever narrow access below the org-wide default',
+      'Use one repeatable method — draw the model, then reason — to answer scenario questions instead of recalling features'
+    ],
+    lessons: [
+      {
+        title: 'What a Sharing & Visibility Architect actually delivers',
+        mins: 6,
+        blocks: [
+          { t: 'p', x: 'An administrator builds what the business asked for. An architect decides what the business is allowed to have. The deliverable of this credential is not a configuration — it is a written access model that a security auditor, a regulator and the next engineer can all read, challenge and extend without you in the room.' },
+          { t: 'h', x: 'The three deliverables' },
+          { t: 'num', items: [
+            'A model: the org-wide defaults, the role and territory structures, every sharing rule, every group, every team, and every programmatic grant — expressed so the effective access for any named user can be derived from the document alone.',
+            'A justification: for each choice, the requirement it serves and the alternative you rejected. An unjustified model cannot be maintained, because nobody can tell which parts are load-bearing.',
+            'A validation plan: how you will prove the model does what you claimed, and how you will detect it drifting. Drift, not the initial build, is what actually causes a breach.'
+          ]},
+          { t: 'p', x: 'Salesforce recommends two to three years of platform experience plus four to five years implementing complex security models before you sit this exam. That gap between the two numbers is the whole point: the experience makes you slow and careful, and the exam checks whether you have earned the right to be.' },
+          { t: 'callout', kind: 'tip', x: 'There is no prerequisite. You can sit Plat-Arch-205 cold. What you cannot skip is the four to five years of practice — the exam is 60 scenario questions and there is nowhere to hide.' },
+          { t: 'h', x: 'What the credential unlocks' },
+          { t: 'p', x: 'Sharing & Visibility Architect is one of the four constituent exams of the Salesforce Certified Application Architect designation (with Platform App Builder, Platform Data Architect and Platform Developer). It also feeds the B2B Solution Architect credential and sits on the long road to Certified Technical Architect. It is a gateway exam, not a terminal one — which is why it rewards precision over breadth.' },
+          { t: 'callout', kind: 'warn', x: 'Salesforce Help article id=005298977 has an editing error: its body text twice calls this the "Sharing and Visibility Specialist" exam while every heading, the Trailhead page and the prerequisite table all say Architect. If you search for "Specialist" and find nothing, you are not imagining it. The credential is the Architect one.' }
+        ]
+      },
+      {
+        title: 'Exam logistics: exactly what you are walking into',
+        mins: 7,
+        blocks: [
+          { t: 'p', x: 'Here are the facts from the official exam guide, verbatim, so you never book on a number a blog invented.' },
+          { t: 'table', head: ['Item', 'Official value'], rows: [
+            ['Exam', 'Salesforce Certified Platform Sharing and Visibility Architect'],
+            ['Exam code', 'Plat-Arch-205'],
+            ['Content', '60 multiple-choice questions and up to five unscored questions'],
+            ['Time', '120 minutes'],
+            ['Passing score', '58%'],
+            ['Version', 'Exam questions align to the Winter ’23 release'],
+            ['Prerequisite', 'None'],
+            ['Registration', 'US$400 (JPY ¥60,000), plus local taxes'],
+            ['Retake', 'US$200 (JPY ¥30,000)'],
+            ['Delivery', 'Proctored — testing centre or online'],
+            ['References', 'None. No hard-copy or online material.'],
+            ['Maintenance', 'One maintenance badge per year, Winter release cycle']
+          ]},
+          { t: 'callout', kind: 'warn', x: 'The passing score is 58%, not the 67% or 68% that almost every third-party site claims. Those numbers are stale: 68% belonged to the Summer ’18 "Sharing and Visibility Designer" guide and 67% to a 2020–21 intermediate version, both with different domain weightings. Confirm every logistics fact on the Salesforce Help article yourself before you book — this is exactly the kind of thing the exam will not forgive you for getting wrong, and the internet is unusually confident about being wrong here.' },
+          { t: 'h', x: 'The five unscored questions' },
+          { t: 'p', x: 'The guide states the exam "may contain up to five additional unscored questions to gather performance data", randomly integrated, with no impact on your result. Practically: expect up to 65 items in 120 minutes, which is about 1 minute 51 seconds each. Do not let the unscored items eat the time budget for the scored ones — flag and move.' },
+          { t: 'h', x: 'Maintenance, not re-certification' },
+          { t: 'p', x: 'This credential expires yearly, not every three years: you complete a maintenance badge each Winter cycle. That badge is the easiest argument for staying current in the platform generally — you are already re-reading release notes once a year for it. Phases 18 and 19 of this academy are built to be that habit.' }
+        ]
+      },
+      {
+        title: 'The blueprint, verbatim: four domains and eighteen objectives',
+        mins: 8,
+        blocks: [
+          { t: 'p', x: 'Memorise the shape of this table before you memorise anything else. Every study decision — where to spend hours, which questions to practise, what to revise last — falls out of it.' },
+          { t: 'table', head: ['Domain', 'Weight', 'Objectives', 'Phases here'], rows: [
+            ['Access to Records', '39%', '9', '2–9'],
+            ['Permissions to Standard Objects, Custom Objects and Fields', '27%', '5', '10–14'],
+            ['Implications of Security Model Choice', '18%', '3', '15–16'],
+            ['Access to Other Data', '16%', '1', '17']
+          ]},
+          { t: 'callout', kind: 'tip', x: 'Access to Other Data is one objective at 16%. That is unusual and it is exploitable: a single broad objective worth nearly a sixth of the exam is where many candidates leave easy points, because they assume "other data" means trivia. It means folders, reports, list views, export, files, Chatter, Knowledge, Big Objects and guest surfaces. It is a wide, shallow, highly learnable 16%.' },
+          { t: 'h', x: 'The eighteen objectives, grouped' },
+          { t: 'p', x: 'Access to Records (39%) — recommend the appropriate organization-wide defaults; leverage the role hierarchy; implement sharing rules; use groups; use teams; choose the correct object relationships; use programmatic sharing; choose a mechanism for External Users; use record access overrides.' },
+          { t: 'p', x: 'Permissions to Objects and Fields (27%) — recommend the right level of object permissions; recommend the correct level of field permissions; recommend a mechanism to hide data at the user interface level; determine access controls to protect sensitive data (PCI, PII, HIPAA); recommend a programmatic solution to ensure security settings are enforced.' },
+          { t: 'p', x: 'Implications of Security Model Choice (18%) — determine the scalability implications of the sharing solution; determine the licence limitations that will impact the intended sharing solution; determine how to test the sharing model.' },
+          { t: 'p', x: 'Access to Other Data (16%) — determine the appropriate access control needed to grant access to data that is not standard or custom objects.' },
+          { t: 'h', x: 'Notice what the blueprint does not contain' },
+          { t: 'p', x: 'There is no mention of Agentforce, Data 360, MCP, Shield encryption, Event Monitoring, Named Credentials, permission set groups, or a single one of the features that has reshaped this platform since Winter ’23. The blueprint has not been republished. That is precisely why Phases 18 and 19 exist in this academy: the exam will not test them, but an interview in 2027 certainly will, and designing a sharing model without them is professionally negligent.' }
+        ]
+      },
+      {
+        title: 'The additive-only rule: the one idea the whole exam rests on',
+        mins: 9,
+        blocks: [
+          { t: 'p', x: 'If you learn one thing from this academy, learn this. Salesforce sharing is cumulative and it only ever adds. The org-wide default is the floor. Every other mechanism — role hierarchy, sharing rules, manual sharing, teams, Apex managed sharing — sits on top of it and grants more. Not one of them can take access away.' },
+          { t: 'table', head: ['Mechanism', 'Direction', 'Can it narrow access?'], rows: [
+            ['Organization-wide default', 'sets the floor', '— (it IS the floor)'],
+            ['Role hierarchy + implicit sharing', 'widens upward', 'No'],
+            ['Grant Access Using Hierarchies', 'widens upward', 'No'],
+            ['Criteria-based sharing rule', 'widens', 'No'],
+            ['Ownership-based sharing rule', 'widens', 'No'],
+            ['Public group membership', 'widens (via rules)', 'No'],
+            ['Account / Opportunity / Case Team', 'widens', 'No'],
+            ['Manual sharing', 'widens', 'No'],
+            ['Apex managed sharing', 'widens', 'No'],
+            ['Object-level View All / Modify All', 'widens', 'No'],
+            ['System-level Modify All Data / View All Data', 'widens', 'No'],
+            ['Restriction rule', 'NARROWS', 'YES — the one exception'],
+            ['Scoping rule', 'NARROWS', 'YES']
+          ]},
+          { t: 'callout', kind: 'warn', x: 'Restriction rules and scoping rules are the only declarative tools that can subtract from the floor. This is why they exist, why they are architect-level tools, and why they are the answer to more scenario questions than most candidates realise. If a requirement says "this group must NOT see these records even though a sharing rule would give them access", the answer is a restriction rule — never a cleverer sharing design.' },
+          { t: 'h', x: 'Why this rule is worth nine minutes' },
+          { t: 'p', x: 'Almost every scenario question resolves to the same two-step derivation: establish the floor, then add every grant that applies, then check whether a restriction rule subtracts anything. Candidates who memorised all 40 sharing features still fail these, because they search for a feature matching the requirement. Candidates who apply the ladder derive the answer even when they have never seen the object before. That is the difference between recognising and reasoning.' },
+          { t: 'selfcheck', q: 'Account OWD is Public Read Only. A criteria-based sharing rule gives the "Claims Review" group read access to every Account where Type = \'Provider\'. Can a member of Claims Review be prevented from editing a Provider Account?', a: 'No — not by removing the rule. OWD already gives them edit access on every Account, and Public Read Only is *more* permissive than the rule they hold. To stop them editing, you must change the floor (lower the OWD, then re-grant) or apply a restriction rule. This is the additive-only rule in action and it is the single most common trap in the exam.' }
+        ]
+      },
+      {
+        title: 'Reasoning technique: draw the model, then answer',
+        mins: 8,
+        blocks: [
+          { t: 'p', x: 'Do not read a scenario question and search your memory for a matching feature. Read it and build the model on paper, in four fixed strokes. Architects answer questions this way because the derivation is reliable even on an org you have never seen.' },
+          { t: 'num', items: [
+            'Write the floor. Which OWD applies to this object? If the question does not say, ask what the object would plausibly be set to — and remember Controlled by Parent changes the whole shape of the answer.',
+            'List the subjects. Name each user by the role they play (owner, manager, teammate, portal user, guest, integration user, agent user). Do not use real names; the question will not.',
+            'Stack the grants. Role hierarchy, rules, groups, teams, manual shares, Apex, View All — in the order the platform applies them. Note which grants are additive over which.',
+            'Ask the negation. Finally ask what the requirement forbids, and find the tool that can subtract. If the answer is "nothing can subtract this", then the floor itself is wrong and you have found the real design decision.'
+          ]},
+          { t: 'h', x: 'Reading the question type' },
+          { t: 'table', head: ['The question says…', 'It is really asking…'], rows: [
+            ['"Recommend the appropriate OWD"', 'what is the floor, and what breaks if you move it'],
+            ['"Which sharing mechanism"', 'which tool is least privilege and most maintainable'],
+            ['"Determine how this can be implemented"', 'which of the 40 features fits — look for the constraint in the scenario'],
+            ['"Given a set of conditions"', 'there are interacting mechanisms; derive, do not recall'],
+            ['"Which is the best approach"', 'three options are plausible and two have a hidden cost — find the cost']
+          ]},
+          { t: 'p', x: 'The last row is where marks are lost. "Best approach" questions are always a trade-off question: the correct answer is rarely the most powerful tool, it is the one whose downside you can name out loud. If you cannot articulate what is wrong with the other two options, you have not finished reasoning.' },
+          { t: 'callout', kind: 'tip', x: 'Practise the negation step deliberately. It is the step that separates a 58% pass from an 80%, and it is the step candidates skip because it is the only one that requires drawing something.' },
+          {
+            t: 'ex',
+            id: '1.1',
+            title: 'Diagnose the memoriser',
+            obj: 'Explain, using the four-stroke method, why a candidate who has memorised every sharing feature still fails scenario questions — and rewrite one question so the reasoning is visible.',
+            stars: 2,
+            steps: [
+              'Write down the four strokes from memory: floor, subjects, additive grants, negation.',
+              'Take this scenario: "Opportunity OWD is Private. The VP of Sales reports to the CEO. A manager shares an opportunity manually with a peer manager. A sharing rule on Stage = Closed Won gives read to the Finance group. Can Finance edit that opportunity?"',
+              'Answer it twice. First by naming a feature that "sounds right". Second by running all four strokes.',
+              'Write down which stroke the feature-matching approach skipped, and what it cost you.',
+              'Rewrite the question as a four-stroke worksheet, with a blank line under each stroke.'
+            ],
+            verify: 'You can explain, in three sentences, why "search for a feature" fails and "derive the model" works — and you have a reusable worksheet version of the question.'
+          }
+        ]
+      },
+      {
+        title: 'The Vantage Health Group scenario',
+        mins: 7,
+        blocks: [
+          { t: 'p', x: 'Every exercise in this academy builds into one org so that each phase extends the last instead of restarting. Vantage Health Group is a multi-entity health insurer, sized and shaped to make every objective unavoidable.' },
+          { t: 'table', head: ['Element', 'Design', 'What it forces you to solve'], rows: [
+            ['Three subsidiaries', 'Vantage Health, Vantage Care Partners, Vantage Admin (claims TPA)', 'OWD, role hierarchy, restriction rules'],
+            ['2.4M members / 380k claims', 'Members and Claims custom objects', 'Scalability, ownership skew, recalculation'],
+            ['"Grand Central" account', 'One account owning 40,000 member records', 'Skew diagnosis and mitigation'],
+            ['1,200 field agents', 'Regional coverage of the provider network', 'Territory management'],
+            ['4,000 external brokers', 'Partner portal, multi-tier', 'Sharing sets, external account hierarchy'],
+            ['Member portal + guest directory', 'Customer Community plus an unauthenticated public site', 'Guest user controls, external OWD'],
+            ['Acquired rival', '40k Accounts that legacy staff must not see', 'Restriction rules, scoping rules'],
+            ['Compliance', 'HIPAA on Member__c, PCI on card fields', 'Layered sensitive-data controls'],
+            ['Agentforce + Data 360', 'A triage agent and a care-pathway lake', 'New sharing boundaries (Phase 19)']
+          ]},
+          { t: 'h', x: 'The five custom objects' },
+          { t: 'table', head: ['Object', 'Records it holds', 'Why it exists'], rows: [
+            ['Member__c', '2.4M', 'A covered life. Master-detail from Account. Carries the PII.'],
+            ['Claim__c', '380k', 'A claim against a member. Master-detail from Member__c.'],
+            ['Provider_Network__c', '85k', 'Junction between a provider Account and a health plan. Many-to-many needs its own sharing model.'],
+            ['Consent_Record__c', '3.1M', 'Evidence of marketing and data-sharing consent. Audit-critical, read-mostly.'],
+            ['Access_Request__c', '~50k', 'A request for access, and the audit record of who granted it.']
+          ]},
+          { t: 'p', x: 'Note the shapes. Member__c is master-detail from Account, which means its access partly inherits from its parent — that inheritance is a security decision, not just a data-modelling one, and Phase 6 exists because of it. Claim__c is master-detail from Member__c, two levels down. Consent_Record__c and Access_Request__c are deliberately audit objects that almost nobody should be able to edit and everybody in the right role must be able to read. Every one of those shapes is a sharing decision before it is a modelling decision.' },
+          {
+            t: 'ex',
+            id: '1.2',
+            title: 'Fill the access-model canvas for one Account',
+            obj: 'Produce the one-page access-model canvas for a single Vantage Account, naming every subject and every mechanism that touches it. This canvas is the artefact you extend in all 20 phases.',
+            stars: 3,
+            steps: [
+              'Open docs/architecture/access-model-canvas.md and fill the header: object, OWD internal, OWD external, owner, record count.',
+              'List the subjects by role, not by name: member owner, claims processor, underwriter, clinical reviewer, field agent, broker (portal), member (portal), guest, integration user, agent user.',
+              'For each subject, write the mechanism that grants access — role hierarchy, sharing rule, group, team, manual share, Apex share, or nothing.',
+              'Write the negation line: who must NOT see this record even if a rule would grant it, and which tool does the subtracting.',
+              'Write the licence each subject consumes. Flag any subject whose licence is the reason a mechanism was rejected.'
+            ],
+            verify: 'Every subject has either a named mechanism or an explicit "no access, by design". The negation line names a tool. Nothing says "granted because of their role" without also naming which role level.'
+          }
+        ]
+      },
+      {
+        title: 'Maintainability, the maintenance badge, and how to study this',
+        mins: 6,
+        blocks: [
+          { t: 'p', x: 'The requirement that separates an architect from a configurator is not capability, it is longevity. A sharing model that only its author understands is worth nothing in eighteen months, because the author has moved on and nobody will dare change it. Design for the next engineer.' },
+          { t: 'list', items: [
+            'Name things. Every role, group, permission set and sharing rule gets a name that says what it is for, not who asked for it. "Claims Review — read/write, HIPAA minimum" beats "Sarah\'s group".',
+            'Use the Description field. It exists on public groups and it is the only documentation a new admin will read. Winter ’25 made it usable for exactly this.',
+            'Keep public groups shallow. Nested groups work; three levels of nesting with inherited access is how you lose the ability to answer "who can see this record?".',
+            'Prefer roles over groups for structural access. Roles survive reorganisations; groups survive nothing. Use groups for genuine membership (a review board, a project team), never for hierarchy.',
+            'Write down the recalculation cost of every change you propose, before you propose it.',
+            'Version the model. Export it, review it, and keep the decision record next to it.'
+          ]},
+          { t: 'h', x: 'Official preparation, and where this academy fits' },
+          { t: 'table', head: ['Resource', 'Use it for'], rows: [
+            ['Architect Journey: Sharing and Visibility trailmix', 'Free, curated, the officially recommended path'],
+            ['Trailhead Academy ARC202 — Build Sharing and Visibility Architect Expertise', 'Instructor-led depth on the four domains'],
+            ['Salesforce Help id=005298977', 'The blueprint. Read it yourself, every time. It is JS-rendered, so a plain fetch returns an empty page.'],
+            ['This academy', 'The reasoning method, the scenario, and the four releases of drift the trailmix cannot cover']
+          ]},
+          { t: 'callout', kind: 'tip', x: 'Read the exam guide from a browser, not a scraper. help.salesforce.com is a JavaScript app; a command-line fetch returns "Loading…" and you will think the article is gone. It is not.' },
+          { t: 'p', x: 'A realistic plan is six to twelve weeks of focused preparation if you already administer an org, and considerably longer if you are only studying. Weight your hours to the domains, not to your comfort: roughly three hours of study per percentage point of weight is a defensible starting split, which puts Access to Records at about a quarter of your total effort.' }
+        ]
+      }
+    ],
+    quiz: {
+      title: "Phase 1 Quiz · Architect Mindset",
+      mins: 8,
+      questions: [
+        {
+          q: 'What is the official passing score for the Salesforce Certified Platform Sharing and Visibility Architect exam?',
+          opts: ['58%', '65%', '67%', '68%'],
+          a: 0,
+          why: 'The official exam guide (Salesforce Help id=005298977) states 58%. The 67% and 68% figures circulating on third-party sites are stale, from the 2020–21 intermediate version and the Summer ’18 Sharing and Visibility Designer guide respectively — both of which had different domain weightings too.'
+        },
+        {
+          q: 'Which domain carries the heaviest weighting on the exam?',
+          opts: ['Permissions to Standard Objects, Custom Objects and Fields', 'Access to Records', 'Implications of Security Model Choice', 'Access to Other Data'],
+          a: 1,
+          why: 'Access to Records is 39%, by far the heaviest. It is also the domain that requires the most reasoning rather than recall, which is why it decides most candidates’ results.'
+        },
+        {
+          q: 'Which of these can NARROW record access below the org-wide default?',
+          opts: ['A criteria-based sharing rule', 'Apex managed sharing', 'A restriction rule', 'An Account Team'],
+          a: 2,
+          why: 'Restriction rules (and scoping rules) are the only declarative tools that subtract from the floor. Every other mechanism — sharing rules, teams, manual sharing, Apex shares, role hierarchy, View All — only ever adds access. This is the additive-only rule.'
+        },
+        {
+          q: 'Apex managed sharing, manual sharing, and an Account Team all appear on the exam. How do they differ in what they are for?',
+          opts: ['They are interchangeable at the same capability', 'Declarative beats Apex; Apex beats manual', 'Manual is per-record and transient; Apex is rule-driven and survives recalculation; teams are small named groups on one record', 'Manual survives ownership changes; Apex does not'],
+          a: 2,
+          why: 'Manual sharing is one record, one user, granted by a human, and it is lost on ownership change unless the Winter ’27 retention toggle is on. Apex managed shares are created by code, persist across sharing recalculation, and can carry a custom sharing reason. Teams are a small, per-record, named set of members with roles — not a scalable access mechanism.'
+        },
+        {
+          q: 'Which statement about the exam blueprint is accurate?',
+          opts: ['It is aligned to the Winter ’26 release', 'It is aligned to the Winter ’23 release and has not been republished', 'It is aligned to the Summer ’26 release', 'It changes every quarter, so pinning a version is pointless'],
+          a: 1,
+          why: 'The live exam guide states "Exam questions align to the Winter ’23 release". No newer published version could be found. The blueprint has four domains and eighteen objectives and it has not moved — which is why this academy isolates the post-Winter ’23 platform changes into Phases 18 and 19 instead of pretending they are examinable.'
+        },
+        {
+          q: 'You must ensure a group cannot see Accounts that a criteria-based sharing rule would otherwise expose to them. What is the correct tool?',
+          opts: ['A second sharing rule that grants access to a smaller group', 'Lower the org-wide default and re-grant everything else', 'A restriction rule', 'Set the object to Controlled by Parent'],
+          a: 2,
+          why: 'A restriction rule is the declarative tool designed to subtract: it restricts a named set of users from seeing records they would otherwise reach through OWD, role hierarchy, sharing rules or ownership. Lowering the OWD would work but is a vastly more disruptive change with a full recalculation cost, so it is the wrong answer when a restriction rule exists.'
+        },
+        {
+          q: 'Why does the exam blueprint contain nothing about Agentforce, Data 360 or MCP?',
+          opts: ['Because those products have no security model', 'Because the blueprint is still pinned to Winter ’23 and predates them', 'Because they are tested on the Developer exam instead', 'Because Salesforce removed security topics from the exam'],
+          a: 1,
+          why: 'The blueprint is aligned to Winter ’23. These platforms arrived later and the guide has not been republished. You will not be tested on them — but an architect will be expected to design for them, which is exactly why Phases 18 and 19 of this academy exist.'
+        },
+        {
+          q: 'Which credential is Sharing & Visibility Architect a constituent exam of?',
+          opts: ['Salesforce Certified System Architect', 'Salesforce Certified Application Architect', 'Salesforce Certified Technical Architect', 'Salesforce Certified Identity and Access Management Architect'],
+          a: 1,
+          why: 'It is one of the four constituent exams of Application Architect, alongside Platform App Builder, Platform Data Architect and Platform Developer. It also feeds B2B Solution Architect and the long road to CTA.'
+        },
+        {
+          q: 'Roughly how should study hours be distributed across the four domains?',
+          opts: ['Equally, because each domain is conceptually distinct', 'Proportionally to weight — roughly 3 hours per percentage point', 'Mostly Access to Other Data, because it is only one objective and therefore easy marks', 'Mostly Permissions, because it is the most familiar territory'],
+          a: 1,
+          why: 'Weight-proportional allocation is the defensible default: about 39% of hours on Access to Records, 27% on Permissions, 18% on Implications, 16% on Other Data. The trap is the third option — a single 16% objective looks like easy marks but is broad rather than deep, and under-preparing it is a common way to lose a pass you had in hand.'
+        },
+        {
+          q: 'In the four-stroke reasoning method, what is the fourth stroke?',
+          opts: ['List every feature that could apply', 'Write down the exam domain and its weighting', 'Ask what the requirement forbids and find the tool that can subtract it', 'Estimate the sharing recalculation cost'],
+          a: 2,
+          why: 'The strokes are: establish the floor, name the subjects, stack the additive grants, then ask the negation. The negation stroke is the one that finds restriction rules and it is the one candidates skip because it requires drawing something.'
+        }
+      ]
+    }
+  },
+
+  /* ─────────────────────────── PHASE 2 ─────────────────────────── */
+  {
+    id: 'owd',
+    n: 2,
+    title: 'Organization-Wide Defaults: The Access Floor',
+    icon: '🔒',
+    color: '#B45309',
+    exam: 'records',
+    tagline: 'The baseline every other mechanism builds on — and the most expensive thing you will ever change',
+    guide: '02-Org-Wide-Defaults.md',
+    art: [
+      { label: 'Member__c object metadata', href: 'force-app/main/default/objects/Member__c/Member__c.object-meta.xml' },
+      { label: 'OWD audit queries', href: 'scripts/soql/owd.soql' },
+      { label: 'OWD change plan template', href: 'docs/architecture/owd-change-plan.md' }
+    ],
+    objectives: [
+      'Explain why the org-wide default is a floor that can only be raised by other mechanisms, never lowered by them',
+      'Choose between Private, Public Read Only, Public Read/Write and Controlled by Parent for a given object from first principles',
+      'Distinguish internal from external org-wide defaults and explain why Experience Cloud makes the external setting the more dangerous of the two',
+      'Plan and risk-assess an org-wide default change, including the sharing recalculation it triggers'
+    ],
+    lessons: [
+      {
+        title: 'OWD as floor, not ceiling',
+        mins: 8,
+        blocks: [
+          { t: 'p', x: 'The org-wide default is the baseline visibility for every record of an object, applied to everyone. It is the floor of your access model. Everything else in Salesforce — roles, rules, teams, manual sharing, Apex — exists to grant access above that floor. None of it can remove access the floor already gives.' },
+          { t: 'h', x: 'Why "floor" is the right mental model' },
+          { t: 'p', x: 'The word ceiling is the intuitive mistake, and it reverses the entire logic of the exam. Ask a question like "which sharing mechanism prevents Group A from seeing these Accounts?" and the ceiling framing suggests you hunt for a restrictive tool. The floor framing tells you immediately that the answer is either a restriction rule or a change to the OWD itself.' },
+          { t: 'h', x: 'The four settings' },
+          { t: 'table', head: ['OWD', 'Who can read', 'Who can write', 'When to choose it'], rows: [
+            ['Private', 'Owner only, plus those above in the role hierarchy', 'Owner only', 'Default choice for anything sensitive. It is the only setting that gives you room to design.'],
+            ['Public Read Only', 'Everyone', 'Owners and those above in the role hierarchy', 'Reference or lookup data nobody should edit but everybody must read (e.g. a public list of healthcare provider codes).'],
+            ['Public Read/Write', 'Everyone', 'Everyone', 'Genuinely public data. Almost never right for a commercial org — and it is the most common OWD in an acquired org nobody has reviewed.'],
+            ['Controlled by Parent', 'Whatever the parent record grants', 'Whatever the parent record grants', 'Detail records whose access should never diverge from their parent. Eliminates a whole class of design decision.']
+          ]},
+          { t: 'callout', kind: 'warn', x: 'Controlled by Parent does not mean "inherit everything". It means the detail record follows the parent record\'s access. If the parent is Private and the child is Controlled by Parent, the child is as private as its parent — and the child cannot have its own sharing rules at all. That last consequence is what makes it a security tool rather than a modelling convenience.' },
+          { t: 'selfcheck', q: 'Contact OWD is Public Read Only. A user complains they can see a contact they should not. Which is the architecturally correct first move?', a: 'Stop and establish the floor before touching anything else. Public Read Only means everyone can read every Contact by design, so no sharing mechanism will ever hide it — every other mechanism only adds. The options are to lower the OWD (a disruptive change with a full recalculation cost) or, if the requirement is scoped to a subset, a restriction rule. Chasing a sharing rule here is guaranteed wasted effort, because you cannot subtract with an additive tool.' }
+        ]
+      },
+      {
+        title: 'Deciding the OWD one setting at a time',
+        mins: 10,
+        blocks: [
+          { t: 'p', x: 'Never pick an OWD by intuition or by copying another org. Work through these five questions in order. The first "yes" usually determines the answer, and each question is a scenario question the exam will ask you.' },
+          { t: 'num', items: [
+            'Must access to this record ever depend on its parent? If yes, Controlled by Parent — and you have eliminated the entire sharing design for this object, which is a huge win.',
+            'Does this record hold data the organisation classifies as confidential or regulated? If yes, Private. Always. You can widen access later in minutes; you cannot retroactively audit who saw a record in the meantime.',
+            'Must every user be able to read every record, with no exceptions? If yes, Public Read Only or Public Read/Write. Then ask the harder question: must every user be able to write? "Yes to read" almost never implies "yes to write".',
+            'Is the data reference data — codes, tiers, reference tables — that is written by a small data team and read by everyone? Then Public Read Only, with writes controlled by field-level security and a data-steward permission set.',
+            'If none of the above apply, the default is Private. Private is the answer you should have to argue yourself out of, not into.'
+          ]},
+          { t: 'callout', kind: 'tip', x: 'The asymmetry is the design principle: a floor that is too low can be raised with a permission set and takes seconds. A floor that is too high can only be lowered with a disruptive recalculation. When genuinely uncertain between two settings, choose the more restrictive one and plan to widen it.' },
+          { t: 'h', x: 'The worked case: Member__c at Vantage' },
+          { t: 'p', x: 'Member__c is master-detail from Account, holds HIPAA-regulated PII, has 2.4M records, and is read constantly by claims processors, clinicians and brokers. Walk the questions: does access depend on the parent? The parent Account carries the group and the subsidiary, so yes for the reporting line — but the member must remain visible to a broker whose relationship runs through Account rather than Member. That argues against Controlled by Parent, because it would weld member access to account ownership and then spend Phase 9 undoing it with sharing sets.' },
+          { t: 'p', x: 'Sensitive? Overwhelmingly. So: Private. And Private gives us the design room we need for the 39%-weighted Access to Records domain — role hierarchy for the reporting line, sharing rules for cross-functional review, teams for deal-desk-style collaboration, Apex for the access-request workflow. Choosing Public Read Only here would have made five later phases impossible. That is the cost of a careless OWD, and it is why this question comes first.' },
+          {
+            t: 'ex',
+            id: '2.1',
+            title: 'Set the OWD for three subsidiaries',
+            obj: 'Choose and justify an internal and external org-wide default for each of six Vantage objects, written in the form an audit will actually accept.',
+            stars: 3,
+            steps: [
+              'Work the five deciding questions in order for each object: Account, Contact, Opportunity, Case, Member__c, Consent_Record__c.',
+              'Record an internal OWD and an external OWD for each. They are independent decisions - do not assume they match.',
+              'For Consent_Record__c specifically, decide whether it can be Controlled by Parent. It is audit evidence, which usually means it must survive a parent merge or deletion.',
+              'For each choice write one line: the requirement it serves.',
+              'For each choice write one line: the mechanism you are now locking out, and whether that is acceptable.'
+            ],
+            verify: 'Six objects, twelve values, all justified. You can name, for every object, which later phase depends on the choice you made. Nothing is set to Public Read/Write without a written reason.'
+          }
+        ]
+      },
+      {
+        title: 'OWD on the standard objects of a health insurer',
+        mins: 9,
+        blocks: [
+          { t: 'p', x: 'Standard objects arrive with OWD values chosen by Salesforce for a generic sales org. In a health insurer almost every one of them is wrong, and each is wrong in a different way — which is what makes this a rich exam topic.' },
+          { t: 'table', head: ['Object', 'Shipped default', 'Vantage setting', 'Why'], rows: [
+            ['Account', 'Public Read/Write', 'Private', 'Holds the group and subsidiary. Public Read/Write across three legal entities is a data-protection incident waiting to happen.'],
+            ['Contact', 'Public Read/Write', 'Private', 'Broker and member contacts. Needs a careful external model (Phase 9).'],
+            ['Lead', 'Public Read/Write', 'Public Read Only', 'Inbound enquiry data; written by marketing, read by sales.'],
+            ['Opportunity', 'Controlled by Parent', 'Private', 'Provider-contract renewals are commercially sensitive per subsidiary.'],
+            ['Case', 'Controlled by Parent', 'Private', 'Claims disputes are legal-sensitive. Parent-inheritance is tempting but the claim is the case here, not the account.']
+          ]},
+          { t: 'callout', kind: 'warn', x: 'Account at Public Read/Write is the single most common finding in an acquired org. Every user can read and edit every customer record in every subsidiary, including the 40,000 accounts of the rival Vantage just bought. No sharing rule, role hierarchy or team can undo it. It is fixed by the OWD, and it is fixed by a recalculation that locks the org for hours.' },
+          { t: 'h', x: 'Do not confuse the internal and external OWD' },
+          { t: 'p', x: 'Every object has two org-wide defaults. The internal default governs internal users. The external default governs portal and community users — and it is a separate setting with its own values, which is exactly where the security incidents live. An org can have Account internal Private, external Public Read Only, and everyone in the building reads that as "Account is Private".' },
+          { t: 'selfcheck', q: 'Vantage sets Account external OWD to Public Read Only so that brokers can see the provider network. What is the consequence for member data held on Account records, such as a member’s date of birth on the account household record?', a: 'Every external broker can read it. External OWD applies to the object, not to the subset of fields you care about — so a household record holding member PII becomes readable by 4,000 partner users the moment the external default is Public Read Only. The fix is not to change the OWD back (the broker requirement is real) but to move member PII onto Member__c with its own external handling, and to control what the broker experience renders. Phase 12 and Phase 17 both exist because of lessons like this one.' }
+        ]
+      },
+      {
+        title: 'External OWD: the more dangerous of the two',
+        mins: 7,
+        blocks: [
+          { t: 'p', x: 'The external org-wide default governs every user you did not employ: partner portal users, customer community users, guest users. The population is unbounded by your HR system, frequently multiplies overnight when a partner onboards their own staff, and is invisible in your internal user audit.' },
+          { t: 'h', x: 'The default-deny principle' },
+          { t: 'p', x: 'The secure external configuration is Private plus a small number of explicit, auditable grants: sharing sets for customer communities, external account hierarchy for partners, guest user sharing rules for the public directory. This is default-deny. The insecure configuration — and the one you will inherit — is Public Read Only with a scattering of exceptions carved out later, which is default-allow with patches.' },
+          { t: 'list', items: [
+            'External OWD Private: nothing is visible until a mechanism grants it. Every grant is therefore a decision someone made and can be reviewed.',
+            'External OWD Public Read Only: everything is visible unless someone thought to restrict it. Every restriction is a decision someone forgot to make.',
+            'The second model does not scale past a certain org size, because the number of things nobody thought about grows faster than the team.'
+          ]},
+          { t: 'callout', kind: 'tip', x: 'Since Spring ’25, Salesforce shows a warning when a sharing rule would open visibility to external users. Treat that pop-up as a design review trigger, not a dialog to dismiss: someone has just proposed widening access past a compliance boundary, and it is worth knowing who and why.' },
+          { t: 'p', x: 'Phase 9 takes this from principle to build: sharing sets, share groups, external account hierarchy and the guest user control set. For now the only thing to carry forward is the principle — default-deny, and every grant deliberate.' }
+        ]
+      },
+      {
+        title: 'Controlled by Parent as an access decision',
+        mins: 7,
+        blocks: [
+          { t: 'p', x: 'Controlled by Parent is usually taught as a modelling convenience: it keeps detail records in lockstep with their parent and guarantees accurate roll-ups. That is true, and it is the smaller half of the benefit. The security half is that it eliminates an entire category of design decision.' },
+          { t: 'h', x: 'What it eliminates' },
+          { t: 'p', x: 'A detail record with Controlled by Parent OWD cannot have its own sharing rules. It cannot be shared independently of its parent. It cannot be made visible to a team that cannot see the parent. Every one of those "can we just…" questions that arrives in week three of a project simply has no answer, because the model does not permit the divergence.' },
+          { t: 'table', head: ['', 'Private detail record', 'Controlled by Parent detail record'], rows: [
+            ['Own sharing rules', 'Yes', 'No'],
+            ['Shareable independently of parent', 'Yes', 'No'],
+            ['Access design surface', 'Every grant', 'Zero — it inherits'],
+            ['Roll-up accuracy', 'Depends on roll-up type', 'Guaranteed'],
+            ['Good fit', 'Records needing distinct audiences', 'Records that should never diverge']
+          ]},
+          { t: 'h', x: 'When it is wrong' },
+          { t: 'p', x: 'Controlled by Parent is wrong when the detail record has a genuinely different audience from its parent. At Vantage, Claim__c is master-detail from Member__c and therefore Controlled by Parent — correct, because a claim about a member has no meaning without that member, and its audience is the member\'s audience. The same claim surfaced to an external broker would be wrong, so it should never be visible to a broker at all. That is a design that says "no", which is exactly what a security model is for.' },
+          { t: 'selfcheck', q: 'A client wants Claims visible to underwriters who cannot see the Members they belong to. Can Controlled by Parent deliver that?', a: 'No, and this is the reason to know the setting well. Controlled by Parent welds claim access to member access, so the requirement is self-contradictory: you cannot show a child without its parent. The correct answer is to break the master-detail relationship into a lookup so Claim__c gets its own sharing model, accepting the loss of guaranteed roll-ups, or to model claims under a different parent that underwriters can see. Either way the OWD setting is what told you the design was impossible — which is why it belongs in an architect exam.' }
+        ]
+      },
+      {
+        title: 'What an OWD change actually costs',
+        mins: 9,
+        blocks: [
+          { t: 'p', x: 'Changing an org-wide default is the single most disruptive thing you can do to a Salesforce org. It triggers a sharing recalculation across every record of that object, which locks the object for users, can run for hours on large data volumes, and can time out into a background job you then have to babysit.' },
+          { t: 'h', x: 'The mechanics' },
+          { t: 'list', items: [
+            'Lowering access (more restrictive) or raising it (less restrictive) both trigger recalculation. Raising it is not cheaper just because it grants more.',
+            'The recalculation rebuilds every sharing row for the object: role hierarchy grants, rule-based grants, team grants, ownership grants and manual shares are all re-evaluated.',
+            'Manual shares are recomputed too — which is the argument for the Winter ’27 option to retain manual shares across an ownership transfer. Note the scope carefully: that setting is about ownership transfer, not about OWD recalculation.',
+            'On large objects the recalculation moves to a background process. Users see stale access until it completes, and Apex that assumes immediate share-row existence can fail.'
+          ]},
+          { t: 'callout', kind: 'warn', x: 'Spring ’26 introduced the ability for sharing recalculation to run asynchronously, and the release update enforcing that behaviour lands in Spring ’27. Code that creates a share and immediately queries for it — or that inserts a record and expects its role-hierarchy grants to be queryable in the same transaction — can start failing. Phase 15 treats this in depth; the operational takeaway for this phase is that "recalculation is synchronous and therefore safe to assume" is no longer a safe assumption.' },
+          { t: 'h', x: 'The change plan' },
+          { t: 'num', items: [
+            'Record the current setting and every mechanism that grants access above it. You cannot assess the change without knowing what will re-grant what you just took away.',
+            'Model the before and after. For a sample of named users, list the records they will gain and the records they will lose. Losing access silently is the dangerous direction — it usually shows up as a support ticket weeks later.',
+            'Size the recalculation from your record count for that object. Above roughly a million records on an Enterprise org you should assume a background job and plan for it.',
+            'Choose the window, and tell the people who will lose access before the window, not after.',
+            'Have the rollback ready: the previous OWD value, written down, with the same plan attached.'
+          ]},
+          { t: 'p', x: 'That last point - the rollback written down before the change - is what separates an architect from someone who got lucky. Phase 16 turns this checklist into a reusable artefact you will submit for every change request in your career.' },
+          {
+            t: 'ex',
+            id: '2.3',
+            title: 'Plan a Public Read Only to Private migration',
+            obj: 'Produce the full change plan for lowering Account OWD from Public Read/Write to Private in a 380,000-account org, including the recalculation risk assessment and the written rollback.',
+            stars: 3,
+            steps: [
+              'Inventory: list every mechanism currently granting Account access above the Public Read/Write floor. For a Public Read/Write object the honest answer may be "many, and nobody documented them" - write that down if it is true.',
+              'Model before and after for five named roles: claims processor, underwriter, field agent, broker (portal), finance auditor. List records each will lose.',
+              'Size the recalculation from the Account record count. State whether you expect a foreground lock or a background job, and why.',
+              'Write the comms plan: who is told, when, and what they should do if they lose access they needed.',
+              'Write the rollback: the previous OWD value, the trigger conditions for using it, and who is authorised to trigger it.'
+            ],
+            verify: 'A named owner for the change, a window, a recalculation estimate with reasoning, a before/after access model, a comms plan, and a written rollback. If any of the six is missing, the plan is not finished.'
+          }
+        ]
+      },
+      {
+        title: 'Reading an org\'s OWD posture in five minutes',
+        mins: 6,
+        blocks: [
+          { t: 'p', x: 'Before you design anything in an unfamiliar org, spend five minutes reading its floor. It is the cheapest diagnostic in the platform and it will tell you whether you are extending a considered model or inheriting an accident.' },
+          { t: 'num', items: [
+            'Setup → Sharing Settings. Read every default internal and external value on the page. Photograph them.',
+            'Flag every object at Public Read/Write. Each one is a potential finding, not a setting.',
+            'Flag every object where external access is more permissive than internal. That combination is almost always an oversight rather than a decision.',
+            'Count the objects at Controlled by Parent and confirm each is a detail record that genuinely should never diverge.',
+            'Query the actual record counts per object against the sizes above. The recalculation risk lives in the record count, not the setting.'
+          ]},
+          { t: 'code', lang: 'sql', x: `-- Surface every object, its OWD pair, and the record volume that drives recalculation cost.
+SELECT QualifiedApiName, DurableId
+FROM ObjectDefinition
+WHERE IsCustomizable = TRUE
+ORDER BY QualifiedApiName
+LIMIT 200;
+
+// For one object, size the recalculation before proposing an OWD change.
+SELECT COUNT() FROM Member__c;   // 2.4M  -> assume a background job
+SELECT COUNT() FROM Case;        // 380k  -> still a recalculation, plan the window
+` },
+          { t: 'callout', kind: 'tip', x: 'Read both OWDs, every time, for every object. The single most common finding in a real security review is an external default that is more permissive than the internal one, and it takes about four seconds to check.' },
+          {
+            t: 'ex',
+            id: '2.2',
+            title: 'Predict the visible-record set for four named users',
+            obj: 'Given only an OWD table and a role hierarchy, derive exactly which records four different users can see - and identify which of them is a case where the external OWD was the deciding factor.',
+            stars: 3,
+            steps: [
+              'Build a small org: Account internal Private, external Public Read Only; Case internal Private, external Private; Member__c Controlled by Parent.',
+              'Create four users: (a) a claims processor, (b) their manager two levels up, (c) a broker on the partner portal, (d) an unauthenticated guest on the provider directory.',
+              'Create three Accounts: one owned by the claims processor, one owned by their peer, one owned by the acquired rival. Add Cases to two and Members to one.',
+              'Write down, for each of the four users, the exact list of visible records. Do not add any sharing rules yet - there are none.',
+              'Then write the one sentence that explains the biggest surprise in your list. It will involve the external OWD.'
+            ],
+            verify: 'Four accurate record lists. You can state the role-hierarchy propagation rule in one sentence, and you correctly identified that the broker and the guest are governed by the external default rather than the internal one.'
+          }
+        ]
+      }
+    ],
+    quiz: {
+      title: 'Phase 2 Quiz · Organization-Wide Defaults',
+      mins: 8,
+      questions: [
+        {
+          q: 'Contact OWD is Public Read Only. Which change would make a Contact invisible to a specific group of internal users?',
+          opts: ['A criteria-based sharing rule with an exclusion', 'Lowering the Contact OWD to Private, then re-granting the access everyone else needs', 'An Account Team that excludes them', 'Removing their Read permission on the Contact object'],
+          a: 1,
+          why: 'Public Read Only grants read to everyone, and no additive mechanism can subtract from it. Lowering the OWD to Private establishes a lower floor, and access is then rebuilt on top — that is the additive-only rule. (Removing object Read would hide the whole object from those users, which is a different and much blunter change; it is technically a way to make records inaccessible, but the question asks about narrowing visibility while keeping the object usable.)'
+        },
+        {
+          q: 'Which OWD setting prevents a detail record from having its own sharing rules?',
+          opts: ['Private', 'Public Read Only', 'Controlled by Parent', 'Public Read/Write'],
+          a: 2,
+          why: 'Controlled by Parent detail records inherit their parent\'s access entirely and cannot be shared independently — which eliminates a whole category of design decision. That is why it is an architect tool and not just a modelling convenience.'
+        },
+        {
+          q: 'Why is the external OWD generally considered more dangerous than the internal OWD?',
+          opts: ['It cannot be changed once set', 'It governs users the organisation does not employ, who are invisible in internal user audits and can multiply overnight', 'It always recalculates more slowly', 'It overrides field-level security'],
+          a: 1,
+          why: 'External users — partners, community members, guests — are outside your HR and licence boundaries, often provisioned by other organisations, and not visible in internal user administration. The secure posture is default-deny: external Private, with explicit grants.'
+        },
+        {
+          q: 'Which of these changes does NOT trigger a sharing recalculation?',
+          opts: ['Lowering an object OWD from Public Read Only to Private', 'Raising an object OWD from Private to Public Read Only', 'Adding a member to a public group used by a sharing rule', 'Changing a sharing rule\'s criteria'],
+          a: 2,
+          why: 'Changing OWD in either direction and editing sharing-rule criteria both force a recalculation. Adding a group member only affects the records that rule already matches, so it is scoped rather than global. This asymmetry is why group-based designs are cheaper to operate than rule-heavy ones.'
+        },
+        {
+          q: 'A client says "brokers need to read provider accounts but nothing else." Account external OWD is currently Private. What is the correct approach?',
+          opts: ['Set external OWD to Public Read Only and rely on field-level security to hide everything else', 'Keep external OWD Private and grant access explicitly — sharing sets for community users, external account hierarchy for partner users, guest user sharing rules for the public directory', 'Set external OWD to Public Read Only and add a restriction rule for the sensitive objects', 'Create a duplicate Account object for providers'],
+          a: 1,
+          why: 'Default-deny with explicit grants is the only design that is auditable. Setting the external OWD to Public Read Only makes everything visible by default, and field-level security cannot hide whole records — it hides fields. Restriction rules subtract, but you would be building an exception list for an object you could simply have kept private.'
+        },
+        {
+          q: 'Why is an OWD of Private the correct default when genuinely uncertain?',
+          opts: ['It is faster to query', 'It is the only setting that permits sharing rules to be used at all', 'A restrictive floor can be widened in minutes, while lowering an overly permissive floor requires a disruptive recalculation', 'Private automatically recalculates less often'],
+          a: 2,
+          why: 'The asymmetry is the whole design principle. Widening access is a permission set or a rule and takes seconds. Narrowing access means changing the OWD and eating a full recalculation, with the risk of silent access loss for users who depended on the old floor.'
+        },
+        {
+          q: 'Member__c is Controlled by Parent to Account. A broker must see a Member__c record without seeing its Account. What is the architecturally correct response?',
+          opts: ['Add a Member__c sharing rule for the broker portal', 'Add a guest user sharing rule for brokers', 'The requirement cannot be met — break the master-detail relationship so Member__c gets its own sharing model, or relocate the member onto a parent the broker can see', 'Give brokers View All on Member__c'],
+          a: 2,
+          why: 'This is exactly the limitation Controlled by Parent creates, and recognising it is the point of the setting. Because the child inherits the parent entirely, showing the child without the parent is self-contradictory. View All would grant far more than intended and is the wrong tool.'
+        },
+        {
+          q: 'Since Spring ’25, Salesforce shows a warning when a sharing rule is created that would open visibility to external users. How should you treat it?',
+          opts: ['Dismiss it — sharing rules are internal-only mechanisms', 'As a design review trigger: someone is proposing to widen access past a compliance boundary, so find out who and why', 'As a hard block that prevents the rule being saved', 'As evidence that the external OWD is misconfigured'],
+          a: 1,
+          why: 'It is a warning, not a block, and its purpose is to surface a decision that crosses a trust boundary. Treating it as a review trigger is the difference between a governed model and an accidental one.'
+        },
+        {
+          q: 'What is the single most common OWD finding in an acquired enterprise org?',
+          opts: ['Account or Contact at Public Read/Write', 'Too many objects at Controlled by Parent', 'External OWD more restrictive than internal', 'Cases left at the Salesforce default'],
+          a: 0,
+          why: 'Public Read/Write on Account and Contact ships as the Salesforce default for a generic sales org and nobody revisits it. It means every internal user can read and edit every customer record across every subsidiary, and no sharing mechanism can undo it.'
+        },
+        {
+          q: 'Which of these is the correct first step when proposing an OWD change?',
+          opts: ['Set it in a sandbox and deploy to production', 'Record the current setting and every mechanism that grants access above it', 'Notify the Salesforce support team', 'Disable all sharing rules first so the recalculation is faster'],
+          a: 1,
+          why: 'You cannot assess a change without knowing what will re-grant the access you are removing. Everything else in the plan — sizing, window, rollback, comms — depends on that inventory. Disabling sharing rules first would make the change look fine and the org unusable.'
+        },
+        {
+          q: 'True or false: raising an OWD to be more permissive is cheaper than lowering it, because it grants more access.',
+          opts: ['True', 'False'],
+          a: 1,
+          why: 'Both directions trigger a full sharing recalculation for the object. The direction does not change the cost, which is why the safe planning posture is to start restrictive and widen with cheap additive mechanisms.'
+        }
+      ]
+    }
+  },
+  /* ─────────────────────────── PHASE 3 ─────────────────────────── */
+  {
+    id: 'roles',
+    n: 3,
+    title: 'The Role Hierarchy & Implicit Sharing',
+    icon: '🏗️',
+    color: '#92400E',
+    exam: 'records',
+    tagline: 'The spine of the model — and the mechanism that surprises people most',
+    guide: '03-Role-Hierarchy.md',
+    art: [
+      { label: 'Vantage role hierarchy', href: 'force-app/main/default/roles/VantageRoles.ldp' },
+      { label: 'Role tree SOQL', href: 'scripts/soql/role-tree.soql' }
+    ],
+    objectives: [
+      'Explain how the role hierarchy produces implicit sharing, and enumerate everything it affects beyond the obvious records',
+      'Use Grant Access Using Hierarchies deliberately, per object, instead of accepting the default',
+      'Predict exactly which records a user at any level can see, and explain the propagation direction',
+      'Recognise the requirements a role hierarchy structurally cannot serve, and name the mechanism that can'
+    ],
+    lessons: [
+      {
+        title: 'Roles as the org’s nervous system',
+        mins: 7,
+        blocks: [
+          { t: 'p', x: 'A role answers "where does this person sit". A role hierarchy answers "who is above whom". It is the only mechanism in Salesforce that grants access purely by organisational position, which makes it the cheapest to maintain and the most dangerous to get wrong.' },
+          { t: 'p', x: 'At Vantage the hierarchy is not optional. With Account OWD at Private, the role hierarchy is the only thing giving a manager visibility of their team’s accounts. Remove it and 200 managers lose their pipeline view in one step.' },
+          { t: 'h', x: 'What a role actually does' },
+          { t: 'list', items: [
+            'Assigns every internal user to exactly one position in a single tree. A user has one role; a role can have many users.',
+            'Grants record access upward, by default, for objects configured to allow it.',
+            'Is a target for sharing rules. A rule naming a role grants to everyone in that role and below it.',
+            'Supplies the "manager" field used by approval processes, escalation rules and reporting.',
+            'Scopes some dashboards and reports by role, independently of record access.'
+          ]},
+          { t: 'callout', kind: 'warn', x: 'Roles are for structure, not capability. A role should answer an access question only when the answer is genuinely "they report to them". The moment you create a role called "Regional Claims Access" you have started building a permissions group out of the wrong primitive — that is a public group plus a sharing rule, or a permission set.' },
+          { t: 'selfcheck', q: 'Should you create a role called "Regional Claims Access" for the Northeast region?', a: 'No. Two problems. First, role hierarchy propagates: anyone above that role would inherit the grant, which is not what "regional" means. Second, roles model reporting lines, so you now have a fake reporting line that will confuse every future access question. Use a public group named "Claims Review - Northeast" as a sharing-rule target.' }
+        ]
+      },
+      {
+        title: 'Implicit sharing: the list nobody memorises',
+        mins: 10,
+        blocks: [
+          { t: 'p', x: 'When people say "the role hierarchy shares records upward" they mean one specific rule: a user sees records owned by users lower in the hierarchy. The full picture is broader, and the broader parts are examinable.' },
+          { t: 'table', head: ['What is shared implicitly', 'Direction', 'Notes'], rows: [
+            ['Records owned by users below you', 'Upward', 'The core behaviour. Controlled per object by Grant Access Using Hierarchies.'],
+            ['Parents of child records you can see', 'Both ways', 'A child you can see pulls in its parent.'],
+            ['Ancestors — the parent chain', 'Both ways', 'See a child, get the account above it.'],
+            ['Related lists and roll-up data', 'Via parent', 'Not a separate grant; it arrives with the parent record.'],
+            ['Dashboards and reports scoped by role', 'Configurable', 'Independent of record access — a trap.'],
+            ['Territories the user belongs to', 'Configurable', 'Territory-based, not role-based. Phase 9.'],
+            ['Teammates of reports', 'Both ways', 'See a colleague and you also see their Tasks and Events.']
+          ]},
+          { t: 'callout', kind: 'tip', x: 'The last three rows are where marks are lost. Teammate implicit sharing means that seeing Mary’s Accounts because she reports to you also surfaces her Tasks and Events. And a dashboard scoped to a role can show a manager numbers they cannot drill into — which arrives as "my report is wrong", not as an access ticket.' },
+          { t: 'h', x: 'The parent/child/ancestor rule in three sentences' },
+          { t: 'p', x: 'Access flows freely along relationship edges in both directions. If you can see a Case you can see its Account. If you can see an Account you can see its Contacts, Opportunities and Cases. This is not configurable — which is why the shape of your data model is part of your security model, and exactly why Phase 6 exists.' },
+          { t: 'p', x: 'The practical consequence: granting access to a low-level detail record can hand over its parent, and with it every sibling hanging off that parent. Sharing one Claim__c in a moment of generosity can expose an entire Member__c.' }
+        ]
+      },
+      {
+        title: 'Grant Access Using Hierarchies, deliberately',
+        mins: 8,
+        blocks: [
+          { t: 'p', x: 'Each object has a "Grant Access Using Hierarchies" setting and it is not cosmetic. It controls whether the role hierarchy contributes record access for that object at all. It is disabled by default on some standard objects, which is a common surprise when a manager "suddenly" stops seeing records.' },
+          { t: 'table', head: ['Setting', 'Effect', 'Use it when'], rows: [
+            ['Enabled', 'Users above in the hierarchy see records owned by users below', 'The record is owned by a person whose manager genuinely needs oversight'],
+            ['Disabled', 'The hierarchy contributes nothing for this object', 'Ownership is an assignment artefact, not an oversight relationship']
+          ]},
+          { t: 'h', x: 'The Vantage decision' },
+          { t: 'p', x: 'Consider Consent_Record__c. Every consent record is owned by whichever intake agent processed the request, and an intake agent’s manager has no business reading individual consent evidence. Enabling hierarchy sharing here would push evidence up to team leads who have no reason to hold it.' },
+          { t: 'p', x: 'The right answer: disable Grant Access Using Hierarchies on Consent_Record__c and grant access through a sharing rule to a named compliance group. The manager can still see how many consent records their team processed via a role-scoped dashboard, without being able to read the evidence.' },
+          { t: 'callout', kind: 'warn', x: 'Changing this setting triggers a sharing recalculation for that object, exactly like an OWD change. Plan it with the Phase 2 exercise 2.3 checklist: inventory, model before/after, size, window, rollback.' },
+          { t: 'selfcheck', q: 'A manager sees their team’s Cases via the hierarchy, and can now also see the Accounts those Cases belong to. Bug?', a: 'No — it is the parent/child implicit rule. Access along a relationship edge flows both ways, so a child record grants its parent. This is why "grant access to the detail record" is never low-risk when the detail has a parent: you are granting the parent and every sibling.' }
+        ]
+      },
+      {
+        title: 'Propagation direction, and the sibling problem',
+        mins: 8,
+        blocks: [
+          { t: 'p', x: 'Sharing propagates upward the hierarchy and never downward. A manager sees their reports’ records; a report never sees their manager’s. This asymmetry is worth stating explicitly because scenario questions lean on it.' },
+          { t: 'h', x: 'The sibling problem' },
+          { t: 'p', x: 'Two managers at the same level cannot see each other’s records through the hierarchy. This is the single most common reason a role hierarchy is not enough:' },
+          { t: 'list', items: [
+            'Cross-functional review — an underwriter needs a clinician’s claims. Different branches of the tree.',
+            'Peer collaboration — two regional managers cover the same national account.',
+            'Project membership — a six-person review board spanning four departments, with no reporting relationship.',
+            'Matrixed coverage — a field agent reports to an area manager but works across three regions.'
+          ]},
+          { t: 'p', x: 'All four are solved by sharing rules with a group target (Phase 4), teams (Phase 5) or Apex (Phase 7). Recognising which situation you are looking at is the skill.' },
+          { t: 'callout', kind: 'tip', x: 'A useful heuristic: if the requirement can be phrased "they work for them", the hierarchy is right. If it is phrased "they need to see them", it is not. The exam phrases almost everything as "need to see", which is why the hierarchy answers fewer questions than candidates expect.' },
+          { t: 'p', x: 'One structural limit worth knowing: hierarchies have practical depth limits, and very deep trees carry performance cost because the implicit-sharing calculation walks the path. Design the tree to match the organisation, not to model every dotted line.' }
+        ]
+      },
+      {
+        title: 'Roles as sharing-rule targets',
+        mins: 6,
+        blocks: [
+          { t: 'p', x: 'Roles have a second job that is easy to underrate. A sharing rule can name a role as its target, and the grant then applies to everyone in that role and everyone below it in the hierarchy.' },
+          { t: 'table', head: ['Target', 'Who receives the grant', 'Maintains itself?'], rows: [
+            ['A role', 'Everyone in the role and below it in the hierarchy', 'Yes — follows the org chart'],
+            ['A public group', 'Exactly the group members', 'No — someone must add people'],
+            ['A queue', 'Whoever is in the queue now', 'No — follows ownership, not membership']
+          ]},
+          { t: 'p', x: 'Efficient: one rule target covers a whole subtree, so you never maintain a group against the org chart. Also a trap, because the grant is broader than the role name suggests. A rule granting read to the role "VP Claims" also reaches every claims processor beneath that VP.' },
+          { t: 'p', x: 'At Vantage the right choice is a role target where the requirement genuinely is "everyone in this function at every level" — read access to Provider_Network__c for everyone in the Provider Operations tree. It is the wrong choice for "the six people on the utilisation review board", where a role target hands access to several hundred people who happen to sit below the same VP.' },
+          { t: 'callout', kind: 'tip', x: 'When you choose a role target, write down who else receives the grant by virtue of being below that role. That sentence belongs in the model documentation; it is the most commonly omitted fact in a real access review.' }
+        ]
+      },
+      {
+        title: 'Where the role hierarchy cannot help',
+        mins: 7,
+        blocks: [
+          { t: 'p', x: 'Knowing the limits is worth as much as knowing the capability, because scenario questions are usually built around the limits.' },
+          { t: 'table', head: ['Requirement', 'Why the hierarchy fails', 'Correct mechanism'], rows: [
+            ['Sibling managers see each other’s Accounts', 'Sharing only propagates upward', 'Criteria-based rule with a public group target'],
+            ['A review board spanning four departments', 'No reporting relationship to hang it on', 'Public group as a rule target'],
+            ['Only records matching a business condition', 'The hierarchy has no criteria concept', 'Criteria-based rule'],
+            ['A named set of users per record', 'The hierarchy is per-org, not per-record', 'Account / Opportunity / Case Team'],
+            ['A grant computed by business logic', 'The hierarchy is static configuration', 'Apex managed sharing'],
+            ['External users', 'External users have no internal role', 'Sharing sets, external account hierarchy'],
+            ['Subtracting access from a group', 'The hierarchy only ever adds', 'Restriction rule']
+          ]},
+          {
+            t: 'ex',
+            id: '3.1',
+            title: 'Build the Vantage hierarchy and trace implicit access',
+            obj: 'Build a four-level role hierarchy across three subsidiaries and trace exactly which Accounts each of four named users can see using the hierarchy alone.',
+            stars: 3,
+            steps: [
+              'Create the tree: CEO → three Subsidiary VP roles → Regional Manager roles → two team roles per region. Put Claims, Underwriting and Provider Operations under different VPs so the sibling problem exists.',
+              'Assign four users at levels 2, 3, 3 and 4. Name them by role, not by person.',
+              'Create six Accounts: two owned by the level-3 user in Claims, two by the level-3 user in Underwriting, one by the level-4 user, one by the acquired rival.',
+              'For each user, write the exact list of visible Accounts using the hierarchy alone. No sharing rules exist yet.',
+              'Then answer in writing: which of your six Accounts does the level-3 Claims user NOT see, and why not?'
+            ],
+            verify: 'Four accurate lists. The answer to the last step names lateral separation as the reason, not a misconfiguration.'
+          },
+          {
+            t: 'ex',
+            id: '3.2',
+            title: 'Decide Grant Access Using Hierarchies for five objects',
+            obj: 'Enable or disable the setting per object, justify each decision in terms of what ownership means on that object, and identify which changes need a change window.',
+            stars: 3,
+            steps: [
+              'For Account, Case, Member__c, Consent_Record__c and Access_Request__c, decide enabled or disabled.',
+              'For each, write one sentence defining what "owner" means there. If the sentence is "whoever the workflow assigned it to", that is an argument for disabling.',
+              'Identify which of your five decisions changes who currently has access, and therefore needs a recalculation window.',
+              'Write the before/after for one named user per changing object.',
+              'Draft the comms line you would send to the affected managers.'
+            ],
+            verify: 'Five decisions, five ownership definitions, at least two flagged as recalculation-requiring, with a written comms line. Consent_Record__c must be disabled with the reasoning written out.'
+          },
+          {
+            t: 'ex',
+            id: '3.3',
+            title: 'Find the false reporting line',
+            obj: 'Audit an inherited org role hierarchy and identify the roles that were created to solve an access problem rather than to model the organisation, then propose the correct replacement.',
+            stars: 3,
+            steps: [
+              'Export or screenshot the role tree of the scenario org you have access to. If you use your own dev org, build a deliberately bad one first: three roles named after permissions.',
+              'For each role, ask: does this correspond to a real reporting line? Would an org chart drawn by a human include it?',
+              'For each role that fails, write down who currently receives access *because of it* — including everyone below it in the tree.',
+              'Design the replacement: a public group, a permission set, or a sharing rule, as appropriate.',
+              'Write the migration note explaining what access changes and what does not. The goal is identical effective access with an honest org chart.'
+            ],
+            verify: 'At least two roles identified as false, their actual access footprint quantified, and a replacement design that preserves effective access while removing the fabricated reporting lines.'
+          },
+          { t: 'selfcheck', q: 'Three regional managers cover the same national account and none reports to the others. What is the architecturally correct answer?', a: 'A public group of the three, used as the target of a criteria-based sharing rule on the national-account flag. A role target would grant to everyone below whichever role you picked — hundreds of people. An Account Team works per record but needs maintaining across the whole national portfolio. Manual sharing does not scale and is lost on ownership change. Group plus rule is the only option that is both correct and maintainable.' }
+        ]
+      }
+    ],
+    quiz: {
+      title: 'Phase 3 Quiz · Role Hierarchy & Implicit Sharing',
+      mins: 7,
+      questions: [
+        {
+          q: 'In which direction does role-hierarchy record sharing propagate?',
+          opts: ['Downward only, manager to report', 'Upward only, report to manager', 'Both directions equally', 'Laterally, between peers at the same level'],
+          a: 1,
+          why: 'Upward only. A manager sees their reports’ records; a report never sees their manager’s. Lateral and downward access are exactly the requirements a hierarchy cannot serve.'
+        },
+        {
+          q: 'You share a single Claim__c record with a user. What do they gain as a side effect of implicit sharing?',
+          opts: ['Nothing — sharing one record grants only that record', 'The parent Member__c and every sibling record on it', 'All Claim records belonging to the same owner', 'Only the Account, if the Claim has one'],
+          a: 1,
+          why: 'Access flows freely along relationship edges in both directions, and to ancestors. A child you can see pulls in its parent, and the parent brings every sibling hanging off it.'
+        },
+        {
+          q: 'What is the correct use of Grant Access Using Hierarchies on Consent_Record__c, an audit object owned by whichever intake agent processed the request?',
+          opts: ['Leave it enabled so team leads can monitor volume', 'Disable it, and grant access via a sharing rule to a named compliance group', 'Enable it and add a sharing rule for the compliance group', 'Disable it and grant View All to team leads'],
+          a: 1,
+          why: 'The hierarchy would push consent evidence up to managers with no reason to hold it. Disabling it and using a rule targeting a compliance group gives deliberate, auditable access. Changing the setting triggers a recalculation, so it is a planned change.'
+        },
+        {
+          q: 'A criteria-based sharing rule names a role as its target. Who receives the grant?',
+          opts: ['Only users assigned to that exact role', 'Everyone in that role and everyone below it in the hierarchy', 'Everyone in the same role across all business units', 'Only the role owner'],
+          a: 1,
+          why: 'A role target propagates down the subtree as well as up. Efficient for genuine "this function, every level" requirements, dangerous otherwise.'
+        },
+        {
+          q: 'Three regional managers cover the same national account and none reports to the others. Best mechanism?',
+          opts: ['Put all three under a new common manager', 'A public group of the three, as the target of a criteria-based sharing rule', 'An Account Team on each national account', 'Manual sharing on each national account'],
+          a: 1,
+          why: 'Group plus rule is the only option that is correct and maintainable. A new reporting line fakes the org chart and over-grants; teams need per-record maintenance; manual sharing does not scale.'
+        },
+        {
+          q: 'Which requirement can the role hierarchy NOT serve?',
+          opts: ['A manager seeing their team’s Accounts', 'An executive seeing all Accounts in their division', 'Only records where a custom checkbox is true', 'A team lead seeing their team’s Opportunities'],
+          a: 2,
+          why: 'The hierarchy has no criteria concept — it grants everything below unconditionally. Conditional grants need a criteria-based rule.'
+        },
+        {
+          q: 'True or false: a manager can see their report’s Tasks and Events, even though Tasks are not Accounts.',
+          opts: ['True — teammate implicit sharing', 'False — sharing applies only to the object you shared'],
+          a: 0,
+          why: 'Teammate implicit sharing means seeing a colleague’s records also surfaces their activities. It is correct and frequently forgotten.'
+        },
+        {
+          q: 'Which is a signal you have built a permissions group out of the wrong primitive?',
+          opts: ['Creating roles named after business functions, e.g. "Regional Claims Access"', 'Creating a public group named "Claims Review - Northeast"', 'Assigning a permission set to a user', 'Creating a criteria-based sharing rule'],
+          a: 0,
+          why: 'A role named after a function rather than a reporting line is a smell: it fakes the org chart and propagates access to everyone below it. Function groupings belong in public groups or permission sets.'
+        },
+        {
+          q: 'What happens when you change an object’s Grant Access Using Hierarchies setting?',
+          opts: ['Nothing — it is a UI-only setting', 'A sharing recalculation is triggered for that object, like an OWD change', 'Only new records are affected', 'It requires a full org refresh and a support case'],
+          a: 1,
+          why: 'It changes who receives sharing rows, so it forces a recalculation for that object. Plan it with the OWD change checklist.'
+        },
+        {
+          q: 'Which statement about role hierarchies and ownership is accurate?',
+          opts: ['A manager sees a report’s records only if the object’s hierarchy setting is enabled', 'Role hierarchy grants are independent of the Grant Access Using Hierarchies setting', 'Only custom objects are affected by the setting', 'The setting only affects dashboards, not record access'],
+          a: 0,
+          why: 'Grant Access Using Hierarchies is exactly the per-object control over whether the hierarchy contributes record access. It is disabled by default on some standard objects, which is a common surprise.'
+        }
+      ]
+    }
+  },
+  /* ─────────────────────────── PHASE 4 ─────────────────────────── */
+  {
+    id: 'sharingrules',
+    n: 4,
+    title: 'Sharing Rules, Groups & Queues',
+    icon: '🧭',
+    color: '#0E7490',
+    exam: 'records',
+    tagline: 'The workhorse: business-condition grants, and the three ways to name recipients',
+    guide: '04-Sharing-Rules-Groups-Queues.md',
+    art: [
+      { label: 'Claim__c object-based sharing rule', href: 'force-app/main/default/sharingRules/Claim_Priority_Review.shareRule' },
+      { label: 'Rule conflict matrix', href: 'docs/architecture/rule-conflict-matrix.md' }
+    ],
+    objectives: [
+      'Build a criteria-based sharing rule correctly, including the settings people leave at default and regret',
+      'Predict how multiple rules combine, and state precisely how access is unioned versus intersected',
+      'Choose between public groups, queues and sharing groups on the merits rather than by habit',
+      'Use restriction rules to take access away, which is the only declarative mechanism that can'
+    ],
+    lessons: [
+      {
+        title: 'What a sharing rule actually is',
+        mins: 8,
+        blocks: [
+          { t: 'p', x: 'A sharing rule is a declarative grant with a condition. That is the entire idea: "if the record matches this, then these people get this access". Everything else is configuration surface.' },
+          { t: 'h', x: 'The five things every rule needs' },
+          { t: 'num', items: [
+            'A target — who receives access. All rules require a group or a role; queues are not valid targets for criteria-based rules.',
+            'An access level — Read Only, Read/Write, or Full Access. Full Access on a rule is a red flag worth justifying in writing.',
+            'A scope — which records the rule looks at. Always one of the three rule types below.',
+            'A criteria — which of those records actually get shared.',
+            'An included-record count — whether records already owned by a target member are skipped.'
+          ]},
+          { t: 'callout', kind: 'warn', x: 'Sharing rules never reduce access. They only ever add. This is the single most important property of the mechanism and it shapes everything: if a requirement says "everyone in the compliance group except contractors", no amount of sharing-rule configuration will express it.' },
+          { t: 'h', x: 'The three rule types' },
+          { t: 'table', head: ['Type', 'Selects records', 'Typical Vantage use'], rows: [
+            ['Object-based', 'Any record of the object with no criterion applied', 'Everyone in Provider Operations reads every Provider_Network__c'],
+            ['Criteria-based', 'Only records where the criteria evaluate true', 'Claims with Priority = Critical go to the Clinical Escalation group'],
+            ['Territory-based', 'Records belonging to a territory, resolved via assignment rules', 'Territory access for field agents; Phase 9'],
+            ['Manager-based', 'Records owned by a manager’s reports', 'Delegation of a manager’s queue during absence']
+          ]},
+          { t: 'p', x: 'Object-based rules are criteria-based rules with the criteria left off. Students treat them as a different feature; they are the same feature with a shorter setup, and they are the fastest way to over-share an entire object by accident.' },
+          { t: 'selfcheck', q: 'A requirement says "all employees read all Provider_Network__c records". Which rule type, and what is the risk?', a: 'An object-based rule with a public group target. The risk is that it is unconditional and permanent: every record of the object is exposed to the group, including any you have not created yet, and removing the rule later removes access for everyone with no warning. It also tends to be a symptom — a field-level permission set plus the rule is often enough, and object-based rules on a large object are expensive to recalculate.' }
+        ]
+      },
+      {
+        title: 'Criteria that survive contact with real data',
+        mins: 10,
+        blocks: [
+          { t: 'p', x: 'The criteria editor looks simple and fails in ways that produce real incidents. Four traps account for most of them.' },
+          { t: 'h', x: 'Trap 1: the filter is not what you wrote' },
+          { t: 'p', x: 'A formula filter is a string that must evaluate to true. A malformed filter does not error visibly — it silently shares nothing, or shares everything, depending on how it was written. This is the worst failure mode in the whole platform: the rule looks configured, the Setup page looks fine, and the exposure or the silence is invisible until someone tests it.' },
+          { t: 'h', x: 'Trap 2: blank and null behave differently than you expect' },
+          { t: 'p', x: 'A checkbox criterion like Priority__c = true does not match records where the checkbox is empty. If half your claims never have the checkbox populated, the rule matches half the population you expected. Always write criteria with a not-equal null branch, or use a picklist with a guaranteed default.' },
+          { t: 'h', x: 'Trap 3: formula fields reference stale values' },
+          { t: 'p', x: 'A criterion built on a formula field evaluates against the formula result at recalculation time, not at edit time. If the formula depends on a related record, changes on that related record will not retrigger the rule on the sharing object — a leading cause of "access randomly disappears" reports.' },
+          { t: 'h', x: 'Trap 4: filters are evaluated against all records, indexed or not' },
+          { t: 'p', x: 'A filter that cannot use an index performs badly at recalculation. Large objects with unindexed formula filters are a Phase 15 problem arriving early — note it now.' },
+          { t: 'table', head: ['Criterion pattern', 'Robust?', 'Failure mode'], rows: [
+            ['Priority__c = \'Critical\'', 'Yes', 'None, if every record is guaranteed a value'],
+            ['Priority__c != null', 'No', 'Silent zero match on a formula field'],
+            ['Is_Escalated__c = true', 'Risky', 'Empty checkbox is not true'],
+            ['Member__c.Segment__c = \'Oncology\'', 'Risky', 'Depends on a lookup value, not the shared record'],
+            ['Days_Since_Filed__c > 30', 'Risky', 'Formula field; drifts without retriggering the rule']
+          ]},
+          { t: 'callout', kind: 'tip', x: 'For a rule that must fire reliably, prefer a picklist with a guaranteed default value over a checkbox or a formula. A picklist value is stored data, so it is indexed, comparable and never null once the field is required.' },
+          { t: 'p', x: 'The habit worth building: for every rule you create, write down the record count it should match. Then measure it. A rule whose match count is zero is a bug you can catch today; a rule whose match count is 300,000 when you expected 30 is an incident you cannot.' }
+        ]
+      },
+      {
+        title: 'How multiple rules combine',
+        mins: 8,
+        blocks: [
+          { t: 'p', x: 'This is where scenario questions live, and where confident wrong answers come from. There are two separate combination rules, and people conflate them.' },
+          { t: 'h', x: 'Combination rule 1: records in, union' },
+          { t: 'p', x: 'Within a rule, multiple criteria are ANDed. Each criterion selects records; the rule selects the union of everything it selects. A "Record Type is X" criterion and a "Priority is Critical" criterion are two independent record sets, and the rule fires for both.' },
+          { t: 'p', x: 'And here is the trap: a criterion on a checkbox includes three populations, not two — checked, unchecked, and empty. "Is_Escalated__c = false" matches records where someone explicitly cleared it, not records that were never touched.' },
+          { t: 'h', x: 'Combination rule 2: rules and users, union of grants' },
+          { t: 'p', x: 'If any rule grants a user access to a record, the user has it. Access is additive across rules, across roles, across teams, across Apex and across manual shares. There is no subtraction anywhere in the declarative model.' },
+          { t: 'h', x: 'Where intersection does appear' },
+          { t: 'p', x: 'The one place access is narrowed rather than widened is the user’s permission set and profile, which cap what CRUD access even reaches records. So the effective answer to "can this user see this field" is the intersection of two different systems — record access from sharing, CRUD and FLS from the permission side — and neither knows about the other.' },
+          { t: 'table', head: ['Situation', 'Result'], rows: [
+            ['Rule A grants Read to group G, Rule B grants Read/Write to role R, user is in both', 'Read/Write, via whichever grants more'],
+            ['Two criteria in one rule select overlapping records', 'Shared once, no duplication, no conflict'],
+            ['Rule grants access to a record the user cannot see the object for', 'Still granted — it appears the next time object access is granted'],
+            ['Restriction rule removes access a sharing rule granted', 'Restriction wins, subject to the exemptions on the previous slide'],
+            ['Apex sharing grants access a sharing rule excluded', 'Apex grant still stands — restriction rules target declarative sources only']
+          ]},
+          { t: 'callout', kind: 'warn', x: 'The fourth and fifth rows together are a genuine architectural trap. A restriction rule removes access granted by sharing rules, roles, teams and territory — but it does not remove access granted by Apex managed sharing or manual sharing. If your control depends on being unable to see a record, do not build it on a restriction rule alone.' },
+          { t: 'selfcheck', q: 'Rule 1 shares Claims where Priority = Critical with group Clinical Review at Read/Write. Rule 2 shares Claims where Status = Open with role Claims Manager at Read Only. A user is in Clinical Review and holds the Claims Manager role, and the record is both Critical and Open. What access do they have, and why?', a: 'Read/Write, via Rule 1. Both rules match the record, and grants union — the more permissive one wins. The user’s role does not constrain the group’s grant. Had they been only in Claims Manager, it would be Read Only; had the rule been restricted to Read Only, the union would be Read Only regardless of role.' }
+        ]
+      },
+      {
+        title: 'Groups, queues, sharing groups',
+        mins: 9,
+        blocks: [
+          { t: 'p', x: 'The recipient of a rule is almost always a group. Salesforce offers three group types and they are genuinely different things, not three labels for one concept.' },
+          { t: 'table', head: ['', 'Public group', 'Queue', 'Sharing group'], rows: [
+            ['Purpose', 'A set of people for rules, reports, Einstein features', 'A set of people who own work', 'A set of people who are all customers of one Account'],
+            ['Valid rule target', 'Yes', 'No', 'Yes — account sharing rules'],
+            ['Auto-populated', 'No', 'Yes, by ownership', 'Yes, by AccountMember relationship'],
+            ['Stable when ownership changes', 'Yes', 'No — membership follows ownership', 'Yes'],
+            ['Vantage example', 'Clinical Escalation — 14 named clinicians', 'Claims Escalation Queue', 'Vantage Health Group account on a Member record']
+          ]},
+          { t: 'h', x: 'Queues are not rule targets' },
+          { t: 'p', x: 'This is examinable and it surprises people. You cannot point a criteria-based sharing rule at a queue. A queue is a dynamic set whose membership is defined by who currently owns the records. That dynamism is exactly why it cannot be a rule target — a rule granting to a queue would chase ownership as it moved.' },
+          { t: 'callout', kind: 'tip', x: 'When a requirement says "the escalation team should see escalated claims", the question to ask is "is this group a fixed set of people or a rotating set of owners?". Fixed set → public group as a rule target. Rotating owners → queue for ownership, plus something else for visibility, most likely a role or a sharing rule against the escalation flag.' },
+          { t: 'h', x: 'Sharing groups earn their name' },
+          { t: 'p', x: 'A sharing group on an Account contains every contact at that Account, across every contact record, and can be the target of a rule. It is the mechanism for "every contact at this customer can see this project", and it is also the target that makes account-scoped external access work. Phase 9 leans on it heavily.' },
+          { t: 'p', x: 'Note the shape of the decision: public group for humans named by the org chart, queue for humans named by the work, sharing group for contacts named by the customer relationship. Confusing them is a symptom of not having decided what the membership means.' },
+          { t: 'p', x: 'One more group consideration: group-based rules are recalculated in a predictable order — sharing rules first, then role hierarchy, then teams. That ordering matters mainly for diagnosing why a record is visible, which is Phase 15 territory.' }
+        ]
+      },
+      {
+        title: 'Restriction rules: the only declarative subtraction',
+        mins: 7,
+        blocks: [
+          { t: 'p', x: 'A restriction rule removes access that other mechanisms granted. It is the exception to "sharing only ever adds", and it is the correct answer to more requirements than candidates expect.' },
+          { t: 'h', x: 'What restriction rules remove' },
+          { t: 'list', items: [
+            'Access granted by sharing rules — both criteria-based and object-based.',
+            'Access granted by the role hierarchy.',
+            'Access granted by teams and by manual shares placed on the record.'
+          ]},
+          { t: 'h', x: 'What they do not remove' },
+          { t: 'list', items: [
+            'Access granted by Apex managed sharing.',
+            'The record owner’s own access, and full system administrator access.',
+            'Anything about object or field permissions — a restriction rule never removes CRUD or FLS.'
+          ]},
+          { t: 'callout', kind: 'warn', x: 'Because restriction rules cannot touch Apex sharing or ownership, they cannot be used as a confidentiality control on their own. If the control has to be airtight, the control has to be "the user cannot query the field at all" — FLS — rather than "the user cannot see the record". Phase 12 and Phase 13 exist for that reason.' },
+          { t: 'p', x: 'Restriction rules were designed for a specific pattern: grant broad access for efficiency, then carve out a sensitive slice. A medical org grants all agents read on Members for coordination, then restricts records flagged as belonging to a VIP cohort. The pattern works, and it is worth recognising on sight because scenario questions use it heavily.' },
+          { t: 'h', x: 'Restrict access to' },
+          { t: 'table', head: ['Option', 'Effect', 'Vantage use'], rows: [
+            ['Records not related to the user', 'Removes everything the other mechanisms granted', 'Never — silently breaks the whole model'],
+            ['Records owned by specified users', 'Removes access where a named owner holds the record', 'Agent cannot see claims owned by a named senior reviewer'],
+            ['Records owned by users in specified roles', 'Removes access where the owner holds a named role', 'Claim reviewers cannot see records owned by Legal'],
+            ['Records owned by specified roles (Users/Groups tab)', 'Owner-role variants on the rule', 'The variant to reach for when "role" is the real business rule']
+          ]},
+          { t: 'p', x: 'Read that table carefully — options two, three and four all look almost identical and they are not. They differ in whether you are identifying the owner by user, by the group the owner belongs to, or by the role the owner holds. Picking the wrong one produces a rule that appears correct in Setup and grants the wrong records.' },
+          { t: 'selfcheck', q: 'You want all field agents to read all Members, except members flagged VIP_Cohort__c. Which mechanism, and what are its two main weaknesses?', a: 'A sharing rule granting Read to the Field Agents group, plus a restriction rule removing access to records owned by users in the specified role for records where VIP_Cohort__c = true. Weakness one: the restriction rule cannot remove Apex-managed sharing, so any Apex sharing on Member__c re-opens the record. Weakness two: it cannot remove FLS, so a user who cannot see the record still cannot be prevented from querying a sensitive field by this control alone.' }
+        ]
+      },
+      {
+        title: 'Limits, and the rules that break at scale',
+        mins: 6,
+        blocks: [
+          { t: 'p', x: 'Sharing rules are not unlimited, and the limits are per object, not per org. Knowing them is examinable and practical.' },
+          { t: 'table', head: ['Limit', 'Value', 'Behaviour at the limit'], rows: [
+            ['Sharing rules per object', '50', 'Cannot create more without deleting'],
+            ['Total sharing rules per org', '300', 'Org-wide ceiling'],
+            ['Criteria in one rule', '10', 'Must split into a second rule — which unions, so mind the overlap'],
+            ['Filter length', 'Limited', 'Long filters are unindexable and slow at recalculation']
+          ]},
+          { t: 'callout', kind: 'warn', x: 'Splitting a rule does not narrow access — it unions. Ten criteria in one rule and one rule per criterion produce the same set of shared records, but the split version costs ten times the recalculation work and loses the single filter as an optimisation point. Raise the limit in the org before you split by reflex.' },
+          { t: 'p', x: 'And the operational reality: every sharing rule change forces a recalculation for that object, and every recalculation on a multi-million-record object is an expensive operation with a real user-visible cost. Phase 15 is entirely about this. For now, the discipline is simply: treat a rule change as a change, not as configuration.' },
+          {
+            t: 'ex',
+            id: '4.1',
+            title: 'Author a claims escalation rule, defensively',
+            obj: 'Build a criteria-based sharing rule that grants clinicians read access to escalated claims, with the criteria written so that it cannot silently match zero records.',
+            stars: 3,
+            steps: [
+              'Add a required picklist Claim_Priority__c with values Routine, Urgent, Critical and a default value, so no record can be null.',
+              'Create the public group "Clinical Escalation" and add the named clinicians.',
+              'Create a criteria-based sharing rule on Claim__c granting Read Only to that group where Claim_Priority__c is any of Urgent or Critical.',
+              'Predict the match count from the data you have, then measure the actual count in the Sharing Related List. Compare.',
+              'Now add a second rule variant that is deliberately broken — a malformed filter — and record what the UI shows when you save it. Write down how you would detect this in production.'
+            ],
+            verify: 'The predicted and measured counts agree. The deliberately broken variant is documented with the exact symptom it produces and a detection method that does not rely on a human eyeballing the rule list.'
+          },
+          {
+            t: 'ex',
+            id: '4.2',
+            title: 'Map every sharing source on one record',
+            obj: 'Take a single Member__c record and enumerate every mechanism that could have granted access to it, then confirm each empirically.',
+            stars: 3,
+            steps: [
+              'List every mechanism that can create a sharing row: sharing rules, role hierarchy, teams, manual shares, Apex, account sharing, ownership, guest-user sharing, sharing sets.',
+              'For each, record whether it applies to this record in your org and who the target is.',
+              'Open the record’s Access Grants or use a Tooling API query against the sharing rows, and confirm the list.',
+              'Identify any mechanism you did not think of. There is usually at least one.',
+              'Write the detection query you would run org-wide to find records shared by an unexpected source.'
+            ],
+            verify: 'A complete, empirically confirmed list including at least one mechanism you initially missed, plus a reusable query. If the record is accessible, every grant should be explainable; if not, the absence should be explainable too.'
+          },
+          {
+            t: 'ex',
+            id: '4.3',
+            title: 'Replace a nested-group mess with a correct model',
+            obj: 'Take a permission model built on nested public groups and rule-per-region, and redesign it with the correct target type and the fewest possible rules.',
+            stars: 3,
+            steps: [
+              'Draw the existing model: which groups contain which groups, which rules fire in which order.',
+              'Compute how many rules the current design requires to cover six regions and three access levels. Write the number down.',
+              'Redesign using the correct target type so that the same coverage needs the fewest rules. Aim to reduce the count substantially.',
+              'Verify the redesign grants identical effective access for three test users, one per region.',
+              'Document the rule count reduction and the recalculation cost it implies at Vantage volume.'
+            ],
+            verify: 'A materially smaller rule count, identical effective access verified for three test users, and a written note on the recalculation saving. The redesign should use role or territory targets where the business rule genuinely follows structure.'
+          },
+          { t: 'selfcheck', q: 'You need everyone in the Claims department to read every Claim__c, and Claims Managers to also edit them. Rules and criteria?', a: 'One object-based sharing rule granting Read Only to the Claims Operations public group, and one object-based sharing rule granting Read/Write to the Claims Manager role. Two rules, no criteria needed. Do not try to express this as one rule with two criteria — criteria narrow, they do not widen, so a rule cannot grant Read to one target and Read/Write to another. Also do not reach for two rules on the same object with the same target expecting one to be ignored; both apply, and the more permissive wins.' }
+        ]
+      }
+    ],
+    quiz: {
+      title: 'Phase 4 Quiz · Sharing Rules, Groups & Queues',
+      mins: 7,
+      questions: [
+        {
+          q: 'A criteria-based sharing rule with two criteria fires for which records?',
+          opts: ['Records matching both criteria', 'Records matching either criterion', 'Records matching the first criterion only', 'All records of the object'],
+          a: 1,
+          why: 'Within a rule, each criterion selects a record set and the rule takes the union. Criteria narrow a single rule relative to no criteria, but they union with each other.'
+        },
+        {
+          q: 'Which cannot be the target of a criteria-based sharing rule?',
+          opts: ['A public group', 'A role', 'A queue', 'A sharing group'],
+          a: 2,
+          why: 'Queues are dynamic sets defined by who owns records, so they cannot be rule targets. Public groups, roles and sharing groups all work.'
+        },
+        {
+          q: 'User is in group G (Read/Write via rule) and holds a role (Read Only via rule). Record matches both. What access?',
+          opts: ['Read Only, because roles are more senior', 'Read/Write — grants union and the more permissive wins', 'Read Only, because the role rule was created first', 'Access is denied, because the rules conflict'],
+          a: 1,
+          why: 'Sharing rules only ever add, and grants union. There is no subtraction and no conflict resolution in the declarative model.'
+        },
+        {
+          q: 'Which does a restriction rule NOT remove?',
+          opts: ['Access granted by a sharing rule', 'Access granted by the role hierarchy', 'Access granted by Apex managed sharing', 'Access granted by a team membership'],
+          a: 2,
+          why: 'Restriction rules remove sharing-rule, role-hierarchy, team and manual-share access. They cannot touch Apex managed sharing, and they never remove CRUD or FLS.'
+        },
+        {
+          q: 'True or false: a criteria-based rule with "Is_Escalated__c = false" matches records where the checkbox is empty.',
+          opts: ['True', 'False'],
+          a: 1,
+          why: 'False. An empty checkbox is null, which is neither true nor false. The criterion matches only records where someone explicitly set false — which is why picklists with a default are safer.'
+        },
+        {
+          q: 'What is the maximum number of sharing rules per object?',
+          opts: ['10', '50', '100', '300'],
+          a: 1,
+          why: '50 per object, 300 per org. Criteria per rule is capped at 10 — and note that splitting a rule unions the criteria, so it does not narrow access.'
+        },
+        {
+          q: 'A sharing group differs from a public group because:',
+          opts: ['It is auto-populated from an Account’s contact records and can target account-based rules', 'It supports manual membership only', 'It cannot be used as a rule target', 'It is visible to external users only'],
+          a: 0,
+          why: 'A sharing group contains all contacts on one Account and is the target that makes customer-scoped access work. Public groups are manually maintained.'
+        },
+        {
+          q: 'A formula filter that is malformed will typically:',
+          opts: ['Raise a deployment error at save time', 'Share every record of the object', 'Silently share nothing, with no obvious error', 'Defer to object permissions'],
+          a: 2,
+          why: 'A malformed filter silently shares nothing. This is the worst failure mode in the platform: the rule looks configured and Setup looks fine. Always verify the match count.'
+        },
+        {
+          q: 'Which describes an object-based sharing rule?',
+          opts: ['A sharing rule with no criteria applied', 'A rule that only applies to custom objects', 'A rule that assigns records to territories', 'A rule created by an admin, not a user'],
+          a: 0,
+          why: 'An object-based rule is a criteria-based rule with the criteria left off. It is the same feature with a shorter setup, and the easiest way to over-share an object.'
+        },
+        {
+          q: 'Every sharing rule change forces:',
+          opts: ['Nothing, it is applied instantly', 'A sharing recalculation for that object', 'A full org refresh', 'A permission set reassignment'],
+          a: 1,
+          why: 'As does an OWD change or a Grant Access Using Hierarchies change. On a multi-million-record object this is expensive and user-visible — treat a rule change as a release, not as configuration.'
+        },
+        {
+          q: 'Why is a queue not usable as a sharing rule target?',
+          opts: ['Queues are read-only', 'Queue membership is defined by record ownership, so it changes as work moves', 'Queues can only be targets of Apex', 'Queues require a licence'],
+          a: 1,
+          why: 'A queue is a dynamic set whose membership follows ownership. A rule targeting it would chase ownership as records moved, so the mechanism is not offered.'
+        },
+        {
+          q: 'Which requirement best fits a restriction rule?',
+          opts: ['Grant all agents read on Members, minus records flagged as a VIP cohort', 'Grant a review board access across four departments', 'Share claims where priority is critical with clinicians', 'Grant a manager access to their reports’ records'],
+          a: 0,
+          why: 'Restriction rules exist for the grant-broadly-then-carve-out pattern. Options B is a group plus rule, C is a criteria rule, D is the role hierarchy.'
+        }
+      ]
+    }
+  },
+  /* ─────────────────────────── PHASE 5 ─────────────────────────── */
+  {
+    id: 'teams',
+    n: 5,
+    title: 'Teams',
+    icon: '👥',
+    color: '#7C3AED',
+    exam: 'records',
+    tagline: 'Access for people who work together without reporting to each other',
+    guide: '05-Teams.md',
+    art: [
+      { label: 'Team membership rules', href: 'docs/architecture/team-membership-rules.md' },
+      { label: 'MemberAccessGrantReader.cls', href: 'force-app/main/default/classes/MemberAccessGrantReader.cls' }
+    ],
+    objectives: [
+      'Explain the two ways a user can be added to a team and how that affects the grant',
+      'Configure team-based sharing correctly, including the two options most orgs get wrong',
+      'Choose between teams and public groups on the specific axes that make teams different',
+      'Reason about teams at volume and about what happens when a record changes hands'
+    ],
+    lessons: [
+      {
+        title: 'The problem teams solve',
+        mins: 7,
+        blocks: [
+          { t: 'p', x: 'A team is a group of people who need access to each other’s records without a reporting relationship. That is the whole definition, and it is narrower than it first appears.' },
+          { t: 'p', x: 'The relationship between teams and roles is the key to the mechanism: members of the same team can access each other’s records regardless of where they sit in the hierarchy. Access is lateral. This is the one declarative mechanism that does it.' },
+          { t: 'h', x: 'Teams at Vantage' },
+          { t: 'list', items: [
+            'A utilisation review board: six claims specialists across four departments, no reporting line.',
+            'A regional pod: three field agents covering overlapping member populations in a metro area.',
+            'A deal team for a large employer account: account executive, implementation lead and a service manager.',
+            'An incident response pair: one field agent and one back-office specialist handling the same escalation.'
+          ]},
+          { t: 'callout', kind: 'tip', x: 'Test: if the requirement is "these people work on the same thing" and changes as the work changes, it is a team. If it is "these people hold the same job" it is a role. If it is "these people are somewhere below this person" it is the hierarchy.' },
+          { t: 'selfcheck', q: 'Six specialists form a review board that rotates quarterly. Teams, public group, or role?', a: 'A public group plus a criteria-based sharing rule, not a team. Team-based sharing requires an access field on the shared object naming a specific team, and the board rotates — so the access field would need a value change for every member change. A public group as a rule target follows membership automatically and is the right mechanism for a rotating set.' }
+        ]
+      },
+      {
+        title: 'Two ways in: member records and access fields',
+        mins: 10,
+        blocks: [
+          { t: 'p', x: 'This is the mechanism most candidates half-remember, and it is worth being precise about because it determines whether team-based sharing is even applicable to your object.' },
+          { t: 'h', x: 'Approach 1: a team membership record' },
+          { t: 'p', x: 'When a user is added to a team via the Team-Related List on User, a Member record is created for that user on that team. That membership alone grants nothing. It becomes a grant when the shared object has an access field — typically Access Level on Account or Case — whose value names the team. Then members of the named team get access to that record.' },
+          { t: 'h', x: 'Approach 2: an access field naming the team' },
+          { t: 'p', x: 'You put the team name in the record’s access field. Access now follows that value. The critical consequence: access is now tied to the field, not to the person who set it. When the field changes, access changes — automatically, and immediately, without any sharing recalculation.' },
+          { t: 'callout', kind: 'warn', x: 'When the access field value changes, the previous team loses access and the new team gains it. In Apex that means deleting the old MemberAccessGrant row and inserting a new one. Do not just insert the new grant and leave the old one — you will have two teams reading the record and a stale sharing row that misleads every subsequent audit.' },
+          { t: 'h', x: 'Which objects have an access field' },
+          { t: 'table', head: ['Object', 'Access field', 'Team-based sharing applies?'], rows: [
+            ['Account', 'Access Level field', 'Yes'],
+            ['Opportunity', 'Access Level field', 'Yes'],
+            ['Case', 'Access Level field', 'Yes'],
+            ['Lead', 'Access Level field', 'Yes'],
+            ['Campaign', 'Access Level field', 'Yes'],
+            ['Your custom objects', 'A custom access field you create', 'Yes, once you create it'],
+            ['Member__c, Claim__c, Consent_Record__c', 'None', 'Not without custom development']
+          ]},
+          { t: 'p', x: 'That last row matters at Vantage. Team-based sharing does not work out of the box on the healthcare objects, so a requirement phrased "these clinicians should see each other’s claims" needs either a custom access field plus Apex to maintain it, or — more often — a public group plus a criteria rule. Reach for teams when the object is standard or when you are prepared to build the access field and its maintenance.' },
+          { t: 'selfcheck', q: 'You set Case.Access_Level__c to "Urgent Response Team". Then the team is renamed. What happens?', a: 'Nothing breaks, because the field stores the team Id, not the name — and the rename moves with it. But if anyone recreates the team, or clones records with that value, the value may point at nothing or at a deleted Id. Store and verify by Id, and validate the field so an invalid value cannot be committed.' }
+        ]
+      },
+      {
+        title: 'Configuring team-based sharing, with the two easy mistakes',
+        mins: 9,
+        blocks: [
+          { t: 'p', x: 'Team-based sharing has two configuration options on the object, and the interaction between them produces the classic "some records work" bug.' },
+          { t: 'table', head: ['Option', 'What it does', 'Consequence if wrong'], rows: [
+            ['Enable "Use a team’s access" style rule', 'Adds the team member grants on top of everything else', 'None — this is additive and normally what you want'],
+            ['Team-based sharing rule: members can access records where the access field names their team', 'Creates the lateral grant', 'Without it, setting the access field grants nothing at all']
+          ]},
+          { t: 'callout', kind: 'warn', x: 'Setting the access field to a team name does nothing on its own. The access field is data; the sharing rule is the mechanism that reads it. Teams added to the object’s sharing-rule list without anyone populating the access field also do nothing. Both halves are required, and either half alone is indistinguishable from a broken model until you read the configuration carefully.' },
+          { t: 'h', x: 'The two halves, restated' },
+          { t: 'num', items: [
+            'A sharing rule on the object, based on the access field, targeting members of the named team.',
+            'Records where the access field is populated with the team.',
+            'Users who are members of that team, and whose own CRUD permissions let them see the object at all.'
+          ]},
+          { t: 'p', x: 'Note point three. Team sharing is additive, not a bypass. A user with no Read permission on Case cannot read a Case because a team shares it. Sharing controls records; permissions control whether the object is visible in the first place. Phase 10.' },
+          { t: 'p', x: 'The other practical trap: access level values that do not match any team. Set Case.Access_Level__c to "High", and no team is named, so nothing is shared — and the record looks correctly configured in every screenshot.' }
+        ]
+      },
+      {
+        title: 'Teams versus public groups',
+        mins: 8,
+        blocks: [
+          { t: 'p', x: 'Both are sets of people usable as sharing targets. The difference is what the set means and how it is evaluated.' },
+          { t: 'table', head: ['Axis', 'Public group', 'Team'], rows: [
+            ['Membership source', 'Manually maintained, or by Apex or flow', 'Maintained, or from a member record or the access field'],
+            ['Sharing basis', 'Global: every member gets every shared record of the object', 'Per-record: only records whose access field names that team'],
+            ['Object support', 'Any object', 'Only objects with an access field'],
+            ['Access changes', 'Adding a member grants access org-wide for that object', 'Changing the access field moves access for that record only'],
+            ['Recalculation on change', 'Yes, adding members triggers one', 'No, changing the field is immediate'],
+            ['Vantage fit', 'Compliance groups, review boards, rotating committees', 'Named deal teams on Accounts and Cases']
+          ]},
+          { t: 'callout', kind: 'tip', x: 'The decisive question: is the requirement "these people can see all the shared records of this object" or "these people can see this specific record"? Group for the first, team for the second. That single distinction resolves almost every teams-versus-groups debate, and it is also the distinction scenario questions test.' },
+          { t: 'p', x: 'A second question: does the object have an access field? If not, teams are not available and the debate is over. At Vantage that rules teams out for Member__c, Claim__c, Provider_Network__c, Consent_Record__c and Access_Request__c without custom development.' }
+        ]
+      },
+      {
+        title: 'Team maintenance, and what happens on transfer',
+        mins: 7,
+        blocks: [
+          { t: 'p', x: 'Teams drift. Membership is only as good as the last time somebody reviewed it, and stale team membership is one of the most common findings in a real access review.' },
+          { t: 'list', items: [
+            'Adding or removing a user requires removing the user from the Team-Related List on User, not just changing their role.',
+            'Team membership persists across role changes, which is what makes teams useful and also what makes them stale.',
+            'Inactive users remain team members until explicitly removed.',
+            'Deleted teams leave access field values pointing at nothing — no error, just no access.',
+            'Access field values must match the exact team name string; a typo means no grant and no warning.'
+          ]},
+          { t: 'p', x: 'The ownership interaction is worth stating explicitly. If a record’s owner changes, the owner’s implicit access changes and the record’s sharing rows are updated — but team access is unaffected, because team access is evaluated from the access field, not from ownership. A team can therefore hold access to a record that the team’s members have no relationship to any more.' },
+          { t: 'callout', kind: 'warn', x: 'That last property is a genuine risk in a long-lived org: access granted by a team outlives the project that justified it. Schedule a periodic review of team membership and of access field values on records whose teams no longer exist.' },
+          { t: 'p', x: 'For automated maintenance, Apex can add and remove team members and can write the access field — but remember the delete-then-insert requirement, and remember that each of those changes is a sharing change with the same recalculation implications as any other.' },
+          {
+            t: 'ex',
+            id: '5.1',
+            title: 'Deliver access to a deal team without a reporting line',
+            obj: 'Configure team-based sharing on Case so that three named members of a deal team can see each other’s Cases on one Account, and prove the lateral grant works.',
+            stars: 3,
+            steps: [
+              'Create the team "Vantage Enterprise Deal Team" and add the three members via the Team-Related List on User. Confirm Member records exist.',
+              'On Case, create the sharing rule targeting the team, based on the Access Level field.',
+              'Create three Cases on the Vantage Health account, each owned by a different team member, and set the access field to the team name on each.',
+              'Log in as each member and confirm they can see all three Cases, not just their own.',
+              'Remove one member from the team and re-test. Record exactly what they still see and why — the ownership asymmetry matters.'
+            ],
+            verify: 'All three members see all three Cases. After removal, the removed member sees only their own — and you can explain precisely why they still have that.'
+          },
+          {
+            t: 'ex',
+            id: '5.2',
+            title: 'Diagnose the team model that half works',
+            obj: 'Take a deliberately misconfigured team model and find the cause using only the configuration, not by guessing.',
+            stars: 3,
+            steps: [
+              'Configure teams in three broken ways: (a) members added but no sharing rule, (b) sharing rule present but access field empty, (c) access field value misspelled.',
+              'For each, record the exact observable symptom from a user perspective.',
+              'Identify which of the three produces a silent failure with no Setup error at all.',
+              'Write the checklist you would use to validate any new team-based sharing configuration, with a line per check.',
+              'Decide which of Vantage’s custom objects would need a custom access field to support teams, and estimate what maintaining it would involve.'
+            ],
+            verify: 'Three distinct symptoms documented, the silent failure identified, a reusable validation checklist, and a written estimate for the custom access fields.'
+          },
+          {
+            t: 'ex',
+            id: '5.3',
+            title: 'Decide teams or groups for every Vantage requirement',
+            obj: 'Classify each of eight real requirements as teams, public group plus rule, role, or neither, and justify each decision on the decisive axis.',
+            stars: 3,
+            steps: [
+              'Take the eight requirements from the phase lesson list plus two of your own.',
+              'For each, answer: global access to shared records, or per-record access? Does the object have an access field?',
+              'Choose a mechanism and write one sentence naming the decisive reason.',
+              'For any team choice, name the object and state who maintains the access field value in production.',
+              'Identify at least one requirement where neither teams nor a sharing rule is the right answer, and say what you would use instead.'
+            ],
+            verify: 'Eight justified decisions, each traceable to the global-versus-per-record axis, with a named maintainer for every access field and at least one requirement redirected to an appropriate alternative.'
+          },
+          { t: 'selfcheck', q: 'A team-based sharing rule is created and members are added, but nobody sees anything new. Name the three most likely causes.', a: 'The access field is empty on the records — the rule selects nothing. The access field value does not exactly match a team name — the rule selects records, but they name nothing. Or the users lack Read permission on the object, so the additive grant goes somewhere they cannot reach. Those are the three; check them in that order, because the first is by far the most common.' }
+        ]
+      }
+    ],
+    quiz: {
+      title: 'Phase 5 Quiz · Teams',
+      mins: 6,
+      questions: [
+        {
+          q: 'What does a team grant that a public group does not?',
+          opts: ['Global access to all records of the object', 'Lateral access to specific records whose access field names the team', 'Higher CRUD permissions', 'Access to records owned by any team member'],
+          a: 1,
+          why: 'Team-based sharing is per-record and lateral. A public group rule grants every member access to every shared record of the object.'
+        },
+        {
+          q: 'Adding a user to a team alone, with no sharing rule, grants them access to:',
+          opts: ['Nothing', 'Every record of the shared object', 'Records they own only', 'Records where their name appears in the access field'],
+          a: 0,
+          why: 'Team membership by itself grants nothing. The grant comes from a sharing rule that reads an access field naming the team.'
+        },
+        {
+          q: 'A record’s Case access field names Team A. The field is then changed to name Team B. What happens to Team A’s access?',
+          opts: ['Nothing — grants are permanent', 'Team A loses access immediately, Team B gains it, with no recalculation', 'Team A keeps access until the next recalculation', 'Both teams gain access'],
+          a: 1,
+          why: 'Team access is evaluated from the access field, so it follows the value immediately. In Apex this means delete the old grant row and insert the new one.'
+        },
+        {
+          q: 'Team-based sharing requires an access field. Which object does NOT have one out of the box?',
+          opts: ['Account', 'Case', 'Lead', 'A custom object such as Claim__c'],
+          a: 3,
+          why: 'Account, Opportunity, Case, Lead and Campaign have access fields. Custom objects need a custom access field created and maintained, so teams need development on them.'
+        },
+        {
+          q: 'True or false: team-based sharing bypasses object permissions.',
+          opts: ['True — a team grant gives access regardless of CRUD', 'False — sharing is additive and cannot substitute for Read permission'],
+          a: 1,
+          why: 'False. Sharing controls which records a user reaches; permissions control whether the object is reachable at all. Both are required.'
+        },
+        {
+          q: 'A requirement says "these six specialists, who rotate quarterly, should see all critical claims". Best mechanism?',
+          opts: ['A team, with the access field populated by a flow', 'A public group as the target of a criteria-based sharing rule', 'A role hierarchy level', 'Account teams'],
+          a: 1,
+          why: 'A rotating set wants membership that follows automatically. A group plus a criteria rule does that; a team would need the access field rewritten on every membership change, and Claim__c has no access field anyway.'
+        },
+        {
+          q: 'What happens to team-based access when a record’s owner changes?',
+          opts: ['Team access is revoked, because it follows ownership', 'Team access is unaffected, because it is evaluated from the access field', 'Team access transfers to the new owner’s team', 'The access field is cleared'],
+          a: 1,
+          why: 'Team access comes from the access field, not ownership. This is why team grants can outlive the project that justified them — a real long-term risk.'
+        },
+        {
+          q: 'Which situation should be a team rather than a public group?',
+          opts: ['A compliance group that reads all Provider Network records', 'A six-person review board spanning four departments', 'A named deal team needing access to their own Account and its Cases', 'A role that reads every Claim record'],
+          a: 2,
+          why: 'Per-record access to a specific Account is the team case. The others are global-to-the-object grants, which is what groups and roles are for.'
+        },
+        {
+          q: 'An access field contains the value "High". No team is named "High". Result?',
+          opts: ['An error is raised on save', 'No grant — the value names no team, and no warning appears', 'Everyone on the record gets access', 'The value falls back to the record owner’s team'],
+          a: 1,
+          why: 'The access field is data and the rule reads it. A value naming no team matches nothing, silently. Validate the field to prevent it.'
+        },
+        {
+          q: 'Does changing a membership-based team’s membership trigger a sharing recalculation?',
+          opts: ['Yes, as with any membership change', 'No — changing the access field value is immediate'],
+          a: 1,
+          why: 'Changing the access field value updates access directly, with no recalculation. Adding and removing members via the Team-Related List does behave like a membership change, so distinguish the two operations.'
+        },
+        {
+          q: 'In Apex, changing a record’s team from A to B requires you to:',
+          opts: ['Insert a new grant row only', 'Delete the old MemberAccessGrant row and insert the new one', 'Trigger a recalculation', 'Remove the user from team A org-wide'],
+          a: 1,
+          why: 'Leave the old row and both teams keep access, and the stale row corrupts every later audit.'
+        },
+        {
+          q: 'Which is a genuine maintenance risk of team-based sharing?',
+          opts: ['Teams cannot be created in sandboxes', 'Membership persists across role changes and inactive users remain members until removed', 'Team names cannot be renamed', 'A user can belong to only one team'],
+          a: 1,
+          why: 'Persistence is what makes teams useful and also what makes them stale. Schedule periodic reviews of membership and of access field values on records whose teams no longer exist.'
+        }
+      ]
+    }
+  },
+  /* ─────────────────────────── PHASE 6 ─────────────────────────── */
+  {
+    id: 'relationships',
+    n: 6,
+    title: 'Relationships: Parent, Child & Ancestor Sharing',
+    icon: '🔗',
+    color: '#0369A1',
+    exam: 'records',
+    tagline: 'The grant you never configured, delivered by data modelling',
+    guide: '06-Relationships.md',
+    art: [
+      { label: 'Vantage data model', href: 'docs/architecture/data-model.md' },
+      { label: 'Relationship traversal SOQL', href: 'scripts/soql/relationship-traversal.soql' }
+    ],
+    objectives: [
+      'Describe the parent/child and ancestor implicit-sharing rules precisely, in both directions',
+      'Predict the blast radius of sharing a single low-level record',
+      'Design relationship fields so that the implicit grants they create are acceptable',
+      'Explain how a roll-up and a lookup differ in the access they propagate, and why a denormalised copy is safer'
+    ],
+    lessons: [
+      {
+        title: 'The rule nobody configures',
+        mins: 8,
+        blocks: [
+          { t: 'p', x: 'Between two records joined by a relationship, access flows both ways without any sharing configuration. This is implicit sharing via the data model, and it is the mechanism most likely to hand you more than you intended.' },
+          { t: 'h', x: 'Parent/child' },
+          { t: 'p', x: 'If you can see the child, you can see the parent. If you can see the parent, you can see the children. Both directions, unconditionally, for every user type, on every object that has the relationship.' },
+          { t: 'h', x: 'Ancestor' },
+          { t: 'p', x: 'Ancestor access runs up the chain: see a grandchild and you get the child and the parent. The complementary statement is that you do not get the descendants of an ancestor automatically — see an Account and you do not get every Contact on it. That asymmetry is real and it matters: it is why granting access to an Account is far less dangerous than granting access to a deeply nested child.' },
+          { t: 'callout', kind: 'warn', x: 'The practical consequence: sharing one Claim__c can expose its Member__c, and with it every other claim, consent record and access request hanging off that member. On a healthcare org where one member can have hundreds of related records, a single "let Dana see this one claim" is a data incident, not a favour.' },
+          { t: 'selfcheck', q: 'You share one Claim__c with a user. Name everything they now have.', a: 'The Claim, its Member__c, and everything else hanging off that Member — sibling claims, consent records, access requests. Plus the Account, via ancestor access up the chain. And if any of those is a child of something else, the chain continues upward. The only things they do not get are the descendants of the Account, which ancestor access does not deliver.' }
+        ]
+      },
+      {
+        title: 'Lookup versus master-detail, from a security angle',
+        mins: 9,
+        blocks: [
+          { t: 'p', x: 'Both relationship types propagate implicit access. They differ in whether the child can exist without the parent, and that difference has direct security consequences.' },
+          { t: 'table', head: ['', 'Master-detail', 'Lookup'], rows: [
+            ['Child can exist alone', 'No', 'Yes'],
+            ['Parent deleted', 'Children deleted or blocked', 'Children orphaned or nulled'],
+            ['Roll-up summaries', 'Required', 'Not possible'],
+            ['Implicit sharing between them', 'Yes, both ways', 'Yes, both ways'],
+            ['Cross-object security control', 'Very low — the child is inseparable', 'Higher — the link is a reference you can break'],
+            ['Vantage use', 'Consent evidence attached to a Member', 'A claim references a provider who may work for another org']
+          ]},
+          { t: 'p', x: 'The row that matters most is the second-from-last one. A master-detail child cannot be secured independently of its parent, because it cannot be separated from it. If a Consent_Record__c is a master-detail child of Member__c, then no configuration can let a compliance auditor read one consent without reading the member record — the isolation simply does not exist.' },
+          { t: 'callout', kind: 'tip', x: 'Design rule: if a record must be independently securable, it cannot be a master-detail child of the record it must be separable from. Use a lookup plus explicit sharing. Conversely, if you choose master-detail for data-integrity reasons, accept that you have also chosen a coupling of access, and document it.' },
+          { t: 'p', x: 'For the exam, keep the two separate: implicit sharing exists either way; what differs is data integrity, ownership and roll-ups. Do not answer "lookup shares more than master-detail" — they share the same amount.' }
+        ]
+      },
+      {
+        title: 'Calculating the blast radius',
+        mins: 8,
+        blocks: [
+          { t: 'p', x: 'Before you share a record, you should be able to name what comes with it. This is a habit, and it is the difference between a controlled grant and an incident.' },
+          { t: 'h', x: 'The traversal method' },
+          { t: 'num', items: [
+            'Start at the record. Confirm the object and the Id.',
+            'Walk down every child relationship. Each child record is included.',
+            'From each child, walk down again. Recurse until there are no child relationships left.',
+            'Walk up the parent and ancestor chain. Each of those records is included.',
+            'For each included record, note what else is reachable from it by sharing rules, teams or Apex that you did not intend.'
+          ]},
+          { t: 'p', x: 'Steps four and five are where the surprises live. Upward is bounded and predictable; downward is where record counts explode. On Vantage, one Member__c with 900 claims, 4 consent records and 3 access requests is over 900 records of consequence from a single grant.' },
+          { t: 'callout', kind: 'warn', x: 'Never share a child record to give someone access to a parent. Share the parent. If you need to share a child without its parent, you cannot — the mechanism does not allow it, which is precisely why child-level shares are so dangerous: you cannot make them surgical.' },
+          { t: 'selfcheck', q: 'An agent needs access to exactly one claim out of 900 on a member. What do you do?', a: 'You cannot do it through record sharing, because sharing the claim also shares the member and therefore its siblings. Options, in order of preference: (1) reconsider whether the agent needs the record at all and whether a de-identified summary object would serve; (2) use an Apex sharing grant plus FLS restriction so the sensitive fields remain unreadable, accepting that record access is broader; (3) give access to the member and control the claims via object permissions on a separate child object. What you must not do is share the single claim and assume it is scoped.' }
+        ]
+      },
+      {
+        title: 'Denormalise when the blast radius is the problem',
+        mins: 7,
+        blocks: [
+          { t: 'p', x: 'If the coupling of implicit sharing is unacceptable, the answer is to change the shape of the data rather than to fight the platform. Two techniques are worth knowing.' },
+          { t: 'h', x: 'Technique 1: the roll-up snapshot' },
+          { t: 'p', x: 'Copy the minimum needed data from the parent onto the child as its own fields, then sever the relationship. A Claim_Summary__c with a denormalised Member_Name__c and a lookup used only for reporting can be shared independently of the Member.' },
+          { t: 'callout', kind: 'warn', x: 'A denormalised copy is a copy, and copies drift. You now own the problem of keeping it correct, and a stale summary is a wrong answer presented confidently. Only do it where the security benefit outweighs the integrity cost, and give it a named owner.' },
+          { t: 'h', x: 'Technique 2: the reportable relationship' },
+          { t: 'p', x: 'Keep the lookup for reporting and integrity, but put the sensitive value on the child as a separate field the user can see. The user reads the claim; the lookup to the member exists but the member is not shared with them because you never granted the child in the first place.' },
+          { t: 'p', x: 'The mistake to avoid is creating a new relationship to solve an access problem and thereby importing the same implicit sharing one level over. Before adding any relationship, ask what access it will implicitly grant, and to whom.' }
+        ]
+      },
+      {
+        title: 'Designing for Vantage’s object graph',
+        mins: 8,
+        blocks: [
+          { t: 'p', x: 'Apply the lesson to the actual object graph and the design decisions fall out.' },
+          { t: 'table', head: ['Relationship', 'Choice', 'Security consequence you are accepting'], rows: [
+            ['Member__c → Account', 'Master-detail', 'Any Account access exposes every member on it'],
+            ['Member__c → Account (alternative)', 'Lookup', 'Account access no longer implies member access; more rules required'],
+            ['Claim__c → Member__c', 'Lookup', 'Sharing a claim still exposes the member — accept or denormalise'],
+            ['Consent_Record__c → Member__c', 'Master-detail', 'Consent is inseparable from the member; isolation is impossible'],
+            ['Claim__c → Provider_Network__c', 'Lookup', 'Provider access does not imply claim access'],
+            ['Access_Request__c → Member__c', 'Master-detail', 'Requests readable only by someone who can read the member']
+          ]},
+          { t: 'p', x: 'Note the Member-to-Account choice, because it is the highest-impact decision in the whole data model. Master-detail is the obvious choice for data integrity and it is defensible. But it means the moment anyone sees a Vantage Health account, they see 2.4M member records — which makes the Account object the most sensitive record in the org and the one most worth protecting with something other than sharing rules.' },
+          { t: 'callout', kind: 'tip', x: 'An architect-level answer here is worth writing out in full: choose master-detail for integrity, then treat the Account object as the primary control point — protect it with object permissions, a clean OWD, and FLS on the member fields that matter. Do not try to solve Account visibility with record-level cleverness.' },
+          {
+            t: 'ex',
+            id: '6.1',
+            title: 'Map the Vantage blast radius',
+            obj: 'Draw the object graph and compute the record count reachable from one low-level record, then identify the two relationships that decide the answer.',
+            stars: 3,
+            steps: [
+              'Draw the five custom objects with every relationship, labelled lookup or master-detail.',
+              'Pick the lowest-level record with the most children — at Vantage, a Member__c with a large claim history.',
+              'Count every record reachable from it, upward and downward, using real data if you have it or stated assumptions if not.',
+              'Identify which two relationships contribute most of that count.',
+              'Write the sentence you would put in a design document explaining why a single grant at this level is not acceptable.'
+            ],
+            verify: 'A labelled graph, a defensible count with assumptions stated, the two dominant relationships named, and a written risk statement suitable for a design review.'
+          },
+          {
+            t: 'ex',
+            id: '6.2',
+            title: 'Redesign one relationship for securability',
+            obj: 'Change a master-detail relationship into a lookup or denormalise it so a record becomes independently securable, and document what you traded away.',
+            stars: 3,
+            steps: [
+              'Take the Consent_Record__c to Member__c relationship. Record what integrity the master-detail gives you.',
+              'Redesign it as a lookup and list what you lose: deletion behaviour, requiredness, roll-up summaries.',
+              'Add explicit compensating controls for each thing you lost — a validation rule, a flow, a duplicate check.',
+              'Write the new implicit-sharing behaviour in one sentence.',
+              'State which of the two designs you would ship, and why, given the compliance requirement.'
+            ],
+            verify: 'Both designs documented with a clear trade-off table, compensating controls listed for each loss, and a justified recommendation that references the compliance requirement rather than personal preference.'
+          },
+          {
+            t: 'ex',
+            id: '6.3',
+            title: 'Prove the traversal method on a real record',
+            obj: 'Take a live record and enumerate the complete set of records a recipient of a single grant would obtain, using queries rather than reasoning.',
+            stars: 3,
+            steps: [
+              'Choose one record with at least two levels of child relationships.',
+              'Write the SOQL to enumerate all children, and all children of children, and the ancestor chain.',
+              'Produce a total count and a list of object types.',
+              'Then add: which of these would also become reachable via the parent’s Account, and what does that add?',
+              'Sanity-check the answer by having a test user with only that one grant attempt to list what they can see, and compare to your prediction.'
+            ],
+            verify: 'A query-derived count matching the empirical test. If they differ, you have found an implicit-sharing source you did not model — identify it before moving on.'
+          },
+          { t: 'selfcheck', q: 'A user can see an Account. Can they see every Contact on it?', a: 'No. Ancestor implicit sharing runs upward — see a child and you get its parents — but seeing a parent does not grant its descendants. That asymmetry is exactly why granting access to a parent record is a bounded action, while granting access to a child is not. It is also worth remembering that seeing an Account can still expose children through sharing rules, Apex or team access, which are separate mechanisms from the implicit one.' }
+        ]
+      }
+    ],
+    quiz: {
+      title: 'Phase 6 Quiz · Relationships & Implicit Sharing',
+      mins: 6,
+      questions: [
+        {
+          q: 'You can see a child record. What do you gain implicitly?',
+          opts: ['Only the child', 'The parent', 'The parent and all other children of that parent', 'The parent and its ancestors'],
+          a: 1,
+          why: 'Parent/child implicit sharing is bidirectional: child gives parent, parent gives children. Ancestor access is a separate rule that runs further up the chain.'
+        },
+        {
+          q: 'You can see an Account. Do you implicitly see every Contact on it?',
+          opts: ['Yes, always', 'No — ancestor sharing runs upward, not downward', 'Yes, if Contacts are lookup-related', 'Only for master-detail'],
+          a: 1,
+          why: 'Ancestor sharing runs from a record up its parent chain. Descendants of an ancestor are not automatically included — which is why granting a parent is bounded and granting a child is not.'
+        },
+        {
+          q: 'Sharing one Claim__c on a Member__c with 900 claims exposes how much data?',
+          opts: ['Just that claim', 'That claim and its member', 'That claim, its member and all 900 sibling claims and consent records', 'Only claims the user previously had access to'],
+          a: 2,
+          why: 'The claim grants its member, and the member grants every child hanging off it. This is why child-level shares cannot be surgical.'
+        },
+        {
+          q: 'Which statement about lookup versus master-detail and implicit sharing is correct?',
+          opts: ['Lookup shares more than master-detail', 'Master-detail shares more than lookup', 'Both share the same amount implicitly; they differ in integrity, ownership and roll-ups', 'Only master-detail propagates access'],
+          a: 2,
+          why: 'Implicit sharing applies to both. The differences are that a child cannot exist alone, roll-ups require master-detail, and deletion behaviour differs — which affects how independently securable a record can be.'
+        },
+        {
+          q: 'A record must be independently securable from its parent. What follows?',
+          opts: ['Use a lookup, or denormalise, and add explicit sharing', 'Use a master-detail child and rely on sharing rules', 'Use a master-detail child and add a restriction rule', 'Use an indirect lookup'],
+          a: 0,
+          why: 'A master-detail child cannot be separated from its parent, so independent isolation does not exist. A lookup plus explicit sharing, or a denormalised copy, is the way.'
+        },
+        {
+          q: 'You need someone to see exactly one claim out of 900 on a member. Best approach?',
+          opts: ['Share the single claim with them', 'Share the claim and add a restriction rule', 'Grant the claim via Apex sharing and rely on FLS for the sensitive fields', 'Give them the member and control claims separately'],
+          a: 2,
+          why: 'Record access on the child necessarily reaches the member. So broaden the record grant and narrow the data instead — FLS and field-level controls. Options A and B fail because restriction rules cannot remove the record grant you just made.'
+        },
+        {
+          q: 'What does ancestor implicit sharing deliver?',
+          opts: ['The parent and all children', 'Every record up the parent chain, but not down', 'Only the immediate parent', 'Nothing beyond explicit shares'],
+          a: 1,
+          why: 'Upward traversal. The direction of the asymmetry is the point: a grant at a low level travels a long way, a grant at a high level does not.'
+        },
+        {
+          q: 'What is the main risk of denormalising a parent’s value onto a child?',
+          opts: ['It reduces record counts', 'The copy can drift out of step with the parent and present a wrong value confidently', 'It disables implicit sharing', 'It requires a master-detail relationship'],
+          a: 1,
+          why: 'You have traded a structural guarantee for a maintained one. Give the copy a named owner and a review cycle, or do not do it.'
+        },
+        {
+          q: 'True or false: implicit sharing via relationships applies regardless of object permissions.',
+          opts: ['True', 'False — permissions can block it'],
+          a: 1,
+          why: 'Implicit sharing only propagates what the user could already reach. A user without Read on an object gains nothing, regardless of the relationship.'
+        },
+        {
+          q: 'What is the highest-impact relationship decision in the Vantage model?',
+          opts: ['Claim__c to Provider_Network__c', 'Member__c to Account, master-detail or lookup', 'Access_Request__c to Member__c', 'Consent_Record__c to Member__c'],
+          a: 1,
+          why: 'It decides whether Account visibility implies visibility of 2.4M member records — which makes the Account object the primary control point and should be treated as the most sensitive record in the org.'
+        }
+      ]
+    }
+  },
+  /* ─────────────────────────── PHASE 7 ─────────────────────────── */
+  {
+    id: 'apexsharing',
+    n: 7,
+    title: 'Apex & Managed Sharing',
+    icon: '⚙️',
+    color: '#1D4ED8',
+    exam: 'records',
+    tagline: 'The programmable escape hatch — and the biggest long-term liability in the model',
+    guide: '07-Apex-Managed-Sharing.md',
+    art: [
+      { label: 'MemberAccessService.cls', href: 'force-app/main/default/classes/MemberAccessService.cls' },
+      { label: 'MemberAccessService.cls-meta.xml', href: 'force-app/main/default/classes/MemberAccessService.cls-meta.xml' },
+      { label: 'MemberAccessTriggerHandler.cls', href: 'force-app/main/default/classes/MemberAccessTriggerHandler.cls' },
+      { label: 'revoke-stale-grants.apex', href: 'scripts/apex/revoke-stale-grants.apex' }
+    ],
+    objectives: [
+      'Write managed sharing correctly: the insert, the delete, the with sharing declaration and the user-mode question',
+      'Explain why a grant created in Apex can outlast the logic that created it, and how to prevent that',
+      'Decide when Apex sharing is justified and when a declarative mechanism would be safer',
+      'Diagnose a sharing problem caused by Apex, including the cases that arise from system-mode execution'
+    ],
+    lessons: [
+      {
+        title: 'What Apex sharing can do that nothing else can',
+        mins: 8,
+        blocks: [
+          { t: 'p', x: 'Managed sharing is the only mechanism that can compute access. Everything declarative matches a static criterion; Apex can evaluate arbitrary logic at record time and grant accordingly.' },
+          { t: 'h', x: 'The three legitimate reasons' },
+          { t: 'num', items: [
+            'Logic the data model cannot express — a condition involving several related records that no single field captures.',
+            'Per-record computation at volume that a formula or flow cannot perform, or that would trigger a recalculation you cannot afford.',
+            'Grant lifecycle management — revoking grants that have become invalid, which no declarative mechanism can do at all.'
+          ]},
+          { t: 'h', x: 'Vantage examples that justify Apex' },
+          { t: 'list', items: [
+            'A member’s care coordinator is determined by a Coordination_Assignment__c record, not by a field on Member__c. Access must follow the assignment.',
+            'A claim is visible to the reviewer only while an Access_Request__c is approved and unexpired. Time-dependent access is not expressible declaratively without a recalculation.',
+            'A regional pod grants access to members within a radius of the assigned agent. Distance is not a field.'
+          ]},
+          { t: 'callout', kind: 'warn', x: 'And one that does not: "agents should see all members in their region" is a public group plus a criteria-based rule. If your justification is "the requirement changes with the business", reach for a declarative mechanism first. Apex sharing is a maintenance commitment, and it is the one mechanism that survives every subsequent refactor as an unexplained behaviour nobody dares remove.' },
+          { t: 'selfcheck', q: 'A requirement says "give Dan read access to high-value accounts in the Northeast". What is the right mechanism?', a: 'A public group containing Dan, plus a criteria-based sharing rule on the region field and the value band. No Apex. The condition is static, expressible on a field, and the rule maintains itself when Dan changes role. Reaching for Apex here is the most common over-engineering error in this exam.' }
+        ]
+      },
+      {
+        title: 'Writing the grant',
+        mins: 10,
+        blocks: [
+          { t: 'p', x: 'The mechanics are small and unforgiving. Four lines of code, and each of them has bitten somebody.' },
+          { t: 'code', lang: 'apex', x: '// Grants read access to a single user on a single record.\n// This is a valid, minimal managed-sharing grant.\ninsert new MemberAccess(\n    UserId       = UserInfo.getUserId(),\n    ParentId     = memberRecordId,     // Member__c\n    AccessLevel  = \'ReadOnly\'\n);\n\n// A group grant targets the group Id, and uses GroupId rather than UserId.\ninsert new MemberAccess(\n    GroupId      = clinicalEscalationGroupId,\n    ParentId     = memberRecordId,\n    AccessLevel  = \'ReadOnly\'\n);' },
+          { t: 'h', x: 'Field names are not interchangeable' },
+          { t: 'p', x: 'AccountShare, OpportunityShare, CaseShare, LeadShare and ContactShare each have their own fields, and the standard field names are inconsistent. AccountShare uses AccountId and OpportunityAccessLevel; OpportunityShare uses OpportunityId and OpportunityAccessLevel; CaseShare uses CaseId and CaseAccessLevel; LeadShare uses LeadId and LeadAccessLevel; ContactShare uses ContactId, ContactAccessLevel and the row-level IsPrimary flag. Read the schema rather than guessing — an insert with the wrong field name either fails to compile or, worse, compiles and grants nothing.' },
+          { t: 'h', x: 'Sharing declaration, and what it actually governs' },
+          { t: 'p', x: 'The with sharing or inherited sharing declaration on a class governs SOQL and SOSL, not the insert. Inserting a share row runs in whatever mode the transaction is in. This distinction is the source of most exam traps in this area.' },
+          { t: 'table', head: ['Declaration', 'Apex runs as the user', 'Records the user cannot see'], rows: [
+            ['with sharing', 'Yes', 'Filtered out of queries'],
+            ['without sharing', 'Yes', 'Returned by queries, then rejected on DML'],
+            ['inherited sharing', 'Depends on the caller', 'Depends on the caller'],
+            ['No declaration, sourceApiVersion < 67.0 (system mode default)', 'No', 'All visible and updatable'],
+            ['No declaration, sourceApiVersion >= 67.0 (user mode default)', 'Yes', 'Filtered out of queries'],
+            ['WITH USER_MODE', 'Yes, and FLS enforced too', 'Filtered out of queries'],
+            ['WITH SYSTEM_MODE', 'No', 'All visible and updatable']
+          ]},
+          { t: 'callout', kind: 'warn', x: 'See the last rows, and note the release change. The default flipped at API 67.0. Before 67.0, Apex with no WITH keyword ran in system mode and saw and changed records the running user could not see. From 67.0 it runs in user mode and enforces the access model the org is configured for. Trusted internal code — batch classes, future methods, schedulables, integration handlers — relied on omission rather than declaration, so on 67.0 those classes start failing on their schedules with insufficient-access errors, and they will not reveal the problem in the Developer Console because that still runs in system context. Practical rule: state the mode explicitly on every class, and treat any WITH SYSTEM_MODE as a decision that needs a stated reason. Phase 14 covers the change in full.' },
+          { t: 'h', x: 'Why the grant can outlive the requirement' },
+          { t: 'p', x: 'A grant row has no expiry. It is removed only if you delete it, if the target user is deleted, if the target group is deleted, or if a Salesforce-owned process removes it. Nothing connects it to the logic that created it. So the grant becomes stale when the underlying relationship changes and your trigger does not fire.' },
+          { t: 'callout', kind: 'warn', x: 'The four failure modes, all real: (1) the trigger never fires because the record is updated with a DML statement that skips triggers, such as Database.update with AllOrNone off; (2) the trigger fires but the logic errors and is swallowed; (3) the trigger fires, grants correctly, and never revokes the previous grant; (4) the target group or user is deleted and the row survives. Every managed-sharing design needs an explicit revocation path, not just a grant path.' }
+        ]
+      },
+      {
+        title: 'Granting to groups, and cascading to roles',
+        mins: 7,
+        blocks: [
+          { t: 'p', x: 'A managed sharing row targets a user Id or a group Id. Targeting the group rather than the individual is almost always right, because group membership then changes propagate on their own.' },
+          { t: 'p', x: 'Grant to the group, not to the people. A grant to each of six clinicians is six rows that drift as clinicians join and leave. A grant to the group is one row that keeps working. The exception is where membership is deliberately narrower than the grant — for instance, a grant to the group plus FLS so that only some members can read the sensitive fields.' },
+          { t: 'h', x: 'A related trap: role hierarchy and Apex' },
+          { t: 'p', x: 'A grant targeting a group of one manager does not extend to their reports. Apex has no implicit cascade to the hierarchy. If you want the reports to have access, you must either target them individually, add them to the group, or use a declarative mechanism that does cascade — which is usually a signal you chose the wrong tool.' },
+          { t: 'p', x: 'The one thing that does cascade in Apex-land is this: if the target is a group and you later delete that group, the rows disappear. So the grant’s lifetime is bounded by the group’s lifetime, which is a genuine advantage worth noting.' }
+        ]
+      },
+      {
+        title: 'Records, transactions and batch safety',
+        mins: 8,
+        blocks: [
+          { t: 'p', x: 'At 2.4M members, batch behaviour is the difference between a feature and an outage.' },
+          { t: 'table', head: ['Concern', 'What goes wrong', 'What to do'], rows: [
+            ['Query in a trigger', 'Non-selective SOQL against a large object, in every transaction', 'Filter on Id or an indexed field; never query on a formula'],
+            ['DML in a loop', 'Governor limit on DML statements', 'Collect into a List and insert once'],
+            ['Recursion', 'The trigger re-fires and re-grants', 'A static boolean guard, or a flag field the trigger does not act on'],
+            ['Mixed DML', 'Inserting share rows in the same transaction as the record insert can hit sharing-related errors', 'Insert the record first, then the shares, in a separate transaction via a Queueable or a second trigger phase'],
+            ['Hard failure', 'One bad row rolls back legitimate grants', 'Catch per record in a batch, log the failures, report them']
+          ]},
+          { t: 'callout', kind: 'warn', x: 'Sharing rows cannot be inserted before the record they reference exists. If your trigger is on the shared object itself, insert the parent record first, then the share rows — usually by deferring the share work to a Queueable job. This is the single most common reason a managed-sharing trigger appears to do nothing.' },
+          { t: 'p', x: 'And a governance point that belongs in the design document: managed sharing is invisible to admins looking at sharing Setup. The only way to see the full picture is a query. Build that query and schedule it.' }
+        ]
+      },
+      {
+        title: 'Summer ’26: user mode becomes the default, and what moves',
+        mins: 7,
+        blocks: [
+          { t: 'p', x: 'This is the release change that reshapes this phase, and it is worth understanding as a direction of travel rather than a single setting.' },
+          { t: 'list', items: [
+            'Starting with API 67.0 (Summer ’26), Apex runs in user mode by default for new and updated code unless it declares otherwise.',
+            'Existing classes that already declare a sharing keyword keep their declared behaviour, so the change is opt-in-by-default for the code you touch.',
+            'Declare user mode or system mode explicitly on every class. Relying on the version default is how a security review turns into an archaeology project.',
+            'Triggers still run in system mode by default; declare the mode on the trigger to get user-mode behaviour, and audit what that does to your DML.'
+          ]},
+          { t: 'callout', kind: 'tip', x: 'Practical guidance for this exam and for the job: treat every class as if it runs in the most restrictive mode that makes it work. If a class genuinely needs system mode, say so in the design document and justify it. Undeclared classes are the vulnerability, not the declared ones.' },
+          { t: 'p', x: 'Phase 14 covers user-mode enforcement in depth. Here, the only point to hold on to is the direction: the platform is progressively narrowing what Apex can bypass, which means shared declarations and ad-hoc grants are the durable risk, and declarative mechanisms are becoming the safer default for new work.' }
+        ]
+      },
+      {
+        title: 'Diagnosing and revoking',
+        mins: 7,
+        blocks: [
+          { t: 'p', x: 'Every managed-sharing design must include the way back. This lesson is the one most often skipped, and it is the one that decides whether the feature is operable.' },
+          { t: 'h', x: 'The four questions to answer before shipping' },
+          { t: 'num', items: [
+            'When is a grant no longer valid, and what identifies that state?',
+            'What code path deletes the row when that state is reached?',
+            'What revalidates rows created before this code existed?',
+            'Who is paged when the reconciliation job finds rows it cannot explain?'
+          ]},
+          { t: 'p', x: 'Question three is the batch job. A nightly reconciliation that queries the share rows, compares them against the current state of the underlying relationship, and deletes the ones that no longer hold. It is unglamorous and it is the difference between a managed-sharing model and an access-leak generator.' },
+          { t: 'table', head: ['Symptom', 'Most likely cause', 'First thing to check'], rows: [
+            ['User can see a record they should not', 'A stale grant nobody revoked', 'Query the share rows for that record and the grant date'],
+            ['User cannot see a record they should', 'Trigger did not fire, or the record did not exist yet', 'Trigger order and whether the share DML was deferred'],
+            ['Grants appear but nobody can use them', 'The user lacks object or field permissions', 'Object permissions and FLS, not sharing'],
+            ['Intermittent, seems random', 'Sharing recalculation running concurrently', 'Recalculation status and its effect on grant timing']
+          ]},
+          {
+            t: 'ex',
+            id: '7.1',
+            title: 'Grant access from a relationship, and revoke it cleanly',
+            obj: 'Implement managed sharing that follows a Coordination_Assignment__c relationship, including full revocation when the assignment ends.',
+            stars: 3,
+            steps: [
+              'Create Coordination_Assignment__c with a Member lookup, a Coordinator lookup to User, and an Active checkbox.',
+              'Write a trigger handler that, when an assignment becomes active, grants the coordinator read access to that member — to the coordinator’s group, not the individual.',
+              'Write the revocation path for when the assignment is deactivated or reassigned. Delete the previous grant; do not leave it.',
+              'Add a static recursion guard and collect DML into a single list insert.',
+              'Test the sequence: create, reassign, deactivate, delete. Write down exactly what the coordinator can see after each step.'
+            ],
+            verify: 'Correct grants and zero stale rows after all four transitions. A share-row query after each step is the evidence, not the UI.'
+          },
+          {
+            t: 'ex',
+            id: '7.2',
+            title: 'Build the reconciliation batch',
+            obj: 'Write the nightly job that finds and deletes managed shares which no longer have a valid underlying relationship.',
+            stars: 3,
+            steps: [
+              'Query all MemberAccess rows created by your Apex — which means you need to distinguish them, so design how. Add a source marker if you have not.',
+              'For each, evaluate whether the underlying assignment is still active and still names that coordinator.',
+              'Delete the ones that fail, in batches, with per-record error handling and a log.',
+              'Produce a count report: rows examined, rows deleted, rows that errored, and the oldest row age.',
+              'Write what you would page someone on, and what you would simply record.'
+            ],
+            verify: 'The job runs on test data containing known-stale rows, deletes exactly those, and produces a report. Oldest-row-age is included because an unexpectedly old surviving row is the signal that matters most.'
+          },
+          {
+            t: 'ex',
+            id: '7.3',
+            title: 'Make the declarative-versus-Apex decision for eight requirements',
+            obj: 'Classify each requirement as declarative or Apex, justify it, and then implement the one you judge weakest to prove the judgment.',
+            stars: 3,
+            steps: [
+              'Take the three justified Apex examples from the lesson plus five requirements of your own.',
+              'For each, decide: does the condition live on a field, or does it require computation across related records?',
+              'Justify each decision in one sentence, and name the maintenance cost you are accepting for each Apex choice.',
+              'Pick the one you rated closest to the boundary and implement the declarative version instead.',
+              'Write the test that proves the declarative version is sufficient, so the decision can be revisited on evidence.'
+            ],
+            verify: 'Eight justified decisions, a maintenance cost stated for every Apex choice, one boundary case reimplemented declaratively, and a passing test demonstrating it is sufficient.'
+          },
+          { t: 'selfcheck', q: 'A former coordinator can still read members they used to coordinate. The trigger is correct. Where is the grant still coming from?', a: 'From a share row nobody deleted. The trigger grants correctly on activation but nothing removes the row on deactivation, or the deactivation path bypassed the trigger, or the coordinator was removed from the group after the row was created — leaving the row orphaned. Check the share rows directly: a Tooling API query on MemberAccess filtered by that user and member will show the row and its creation date. Then build the reconciliation job, because this will recur.' }
+        ]
+      }
+    ],
+    quiz: {
+      title: 'Phase 7 Quiz · Apex & Managed Sharing',
+      mins: 7,
+      questions: [
+        {
+          q: 'Which requirement most clearly justifies Apex managed sharing?',
+          opts: ['Regional agents read members in their region', 'A coordinator can read a member only while an assignment record is active', 'All agents read all members', 'Managers read their team’s claims'],
+          a: 1,
+          why: 'Access depends on a separate record’s state, which no field criterion captures. The others are all declarative: group plus rule, or role hierarchy.'
+        },
+        {
+          q: 'A share row is created for a coordinator. What happens when the assignment is deactivated?',
+          opts: ['The row is automatically removed', 'Nothing removes it — revocation must be implemented explicitly', 'The row converts to the team’s access', 'Salesforce re-evaluates it nightly'],
+          a: 1,
+          why: 'Share rows have no expiry. Every managed-sharing design needs an explicit revocation path plus a reconciliation batch, because grants outlive the logic that created them.'
+        },
+        {
+          q: 'The with sharing keyword on a class governs:',
+          opts: ['Whether the share row insert succeeds', 'Which records SOQL and SOSL return', 'Whether the user can see the field', 'Whether DML succeeds'],
+          a: 1,
+          why: 'The declaration governs queries. Inserting a share row runs in whatever mode the transaction is in — a common source of incorrect answers.'
+        },
+        {
+          q: 'Why should a managed share target a group rather than individual users?',
+          opts: ['It is faster', 'Group membership changes then propagate automatically, and one row replaces many', 'Group-targeted rows cascade to the role hierarchy', 'Only groups can be share targets'],
+          a: 1,
+          why: 'One row per group instead of one per person, and membership changes need no re-granting. Note that a grant to a manager’s group does not cascade to their reports.'
+        },
+        {
+          q: 'What is the most common reason a managed-sharing trigger appears to do nothing?',
+          opts: ['The class is without sharing', 'The share rows are inserted before the record exists', 'The group name is too long', 'The object OWD is Public'],
+          a: 1,
+          why: 'Share rows cannot reference a record that has not been created. Insert the record first and defer the share DML, usually to a Queueable job.'
+        },
+        {
+          q: 'Starting with API 67.0, what is the default for Apex sharing mode?',
+          opts: ['with sharing', 'without sharing', 'User mode, unless the code declares otherwise', 'inherited sharing'],
+          a: 2,
+          why: 'Apex runs in user mode by default from Summer ’26 unless declared. Existing code that already declares a keyword keeps its behaviour. Triggers remain system-mode by default, so declare explicitly.'
+        },
+        {
+          q: 'True or false: a grant to a user’s team cascades to their reports through the role hierarchy.',
+          opts: ['True', 'False'],
+          a: 1,
+          why: 'Apex does not cascade to the hierarchy. If the reports need access, add them to the group, target them individually, or use a declarative mechanism — and needing cascade is often a sign you chose the wrong tool.'
+        },
+        {
+          q: 'A user can see a record they should not, and no sharing rule explains it. Next step?',
+          opts: ['Recalculate sharing', 'Query the share rows for that record and check for a stale Apex grant and its creation date', 'Reset the user’s password', 'Check the OWD setting'],
+          a: 1,
+          why: 'Managed sharing is invisible in Setup. The only way to see it is a query on the share object, so start there.'
+        },
+        {
+          q: 'Which is the correct way to handle changing a record’s team from Team A to Team B in Apex?',
+          opts: ['Insert the new grant only', 'Delete the old grant row and insert the new one', 'Update the grant row’s UserId', 'Recalculate sharing'],
+          a: 1,
+          why: 'Leaving the old row leaves both teams with access and corrupts every subsequent audit.'
+        },
+        {
+          q: 'What makes a nightly reconciliation job necessary?',
+          opts: ['Platform limits on share rows', 'Grants created before the current logic exist, and paths that bypass the trigger', 'Licence counting', 'The role hierarchy being recalculated'],
+          a: 1,
+          why: 'Any grant the current code would not create is a leak waiting to be found. The job compares live share rows against current relationship state and deletes what no longer holds.'
+        },
+        {
+          q: 'Why is "agents read members in their region" a bad candidate for Apex sharing?',
+          opts: ['Apex cannot query Members', 'The condition is a static field, so a group plus a criteria-based rule maintains itself', 'It would exceed share row limits', 'Apex cannot use sharing rules'],
+          a: 1,
+          why: 'Reaching for Apex when a declarative mechanism suffices is the most common over-engineering error. It adds a maintenance commitment and an invisible behaviour nobody dares remove.'
+        },
+        {
+          q: 'What does user mode change about Apex?',
+          opts: ['Nothing relevant to sharing', 'Apex enforces the running user’s record, object and field access unless declared otherwise', 'It disables share row inserts', 'It converts Apex to system mode for triggers'],
+          a: 1,
+          why: 'User mode makes Apex subject to the user’s permissions. System mode bypasses them. Declare one explicitly on every class rather than relying on the version default.'
+        }
+      ]
+    }
+  },
+  /* ─────────────────────────── PHASE 8 ─────────────────────────── */
+  {
+    id: 'manualoverrides',
+    n: 8,
+    title: 'Manual Sharing & Overrides',
+    icon: '🔑',
+    color: '#B45309',
+    exam: 'records',
+    tagline: 'The right tool for one-off exceptions, and a liability at scale',
+    guide: '08-Manual-Sharing-Overrides.md',
+    art: [
+      { label: 'Manual-sharing audit queries', href: 'scripts/soql/manual-sharing-audit.soql' },
+      { label: 'Manual sharing policy', href: 'docs/architecture/manual-sharing-policy.md' }
+    ],
+    objectives: [
+      'Use manual sharing where it is genuinely the right answer, and recognise where it is a deferral',
+      'Explain the lifecycle of a manual share — what removes it, and what silently does not',
+      'Audit and clean up an org with accumulated manual shares',
+      'Distinguish manual sharing from every other mechanism and state the confusion risks'
+    ],
+    lessons: [
+      {
+        title: 'When a manual share is the honest answer',
+        mins: 7,
+        blocks: [
+          { t: 'p', x: 'A manual share is one person granting one other person access to one record. No criteria, no target group, no maintenance. It is the simplest mechanism in the platform and the easiest to overuse.' },
+          { t: 'h', x: 'The three legitimate cases' },
+          { t: 'list', items: [
+            'A genuine exception: an underwriter needs one claim from a sibling’s book for a specific committee meeting on Thursday.',
+            'A migration or remediation step: temporary elevation while data is corrected, with a scheduled removal.',
+            'A test: confirming a fix works before committing to a broader change.'
+          ]},
+          { t: 'callout', kind: 'warn', x: 'The signal that you are using it as a deferral: the requirement is stated as a pattern. "Priya needs access to Dana’s accounts while they cover the Northeast" is not an exception, it is a temporary role change, and it is served by reassigning ownership or by adding a role-based grant. Manual shares are also a security-audit nightmare, because nobody remembers who granted them or when.' },
+          { t: 'p', x: 'The deeper problem is that a manual share answers no question about itself. It is not tied to a role, a team, a requirement or a ticket. Six months later it is indistinguishable from a mistake, and removing it may break a workflow nobody documented.' },
+          { t: 'selfcheck', q: 'A director asks you to give a contractor access to one member’s record for two weeks. Manual share, or something else?', a: 'Manual share, with the expiry written down. It is a genuine exception with a known end. Say so out loud: record the grant date, the end date, and who authorised it, then diarise the removal. If instead the contractor needs ongoing access, a guest user with a licence and a narrower object scope is the right answer, because a manual share to an internal user does nothing for an external person.' }
+        ]
+      },
+      {
+        title: 'How manual shares end',
+        mins: 8,
+        blocks: [
+          { t: 'p', x: 'Almost nothing removes a manual share on its own. This is the property that decides whether manual sharing is manageable in your org.' },
+          { t: 'table', head: ['Event', 'Does the manual share survive?'], rows: [
+            ['The record’s owner changes', 'Usually yes — the share row is independent of ownership'],
+            ['The sharing user is deactivated', 'The row survives; the access is inert until reactivation'],
+            ['The receiving user is deactivated', 'Access is inert; the row survives and returns on reactivation'],
+            ['The object’s OWD changes', 'Manual shares can be lost — OWD change is a re-evaluation'],
+            ['A sharing recalculation runs', 'Manual shares are generally preserved; declarative shares are rebuilt'],
+            ['The record is deleted', 'The row goes with it'],
+            ['The record is cloned', 'Manual shares are not copied to the clone']
+          ]},
+          { t: 'callout', kind: 'warn', x: 'Two rows deserve attention. Ownership change does not remove a manual share, so a contractor’s grant can outlive the contractor’s engagement by months if nobody notices. And a deleted user’s share silently returns when the user is reactivated — which is how an access leak reappears after a "cleanup" was believed to have fixed it.' },
+          { t: 'p', x: 'Cloning is the other trap. A manual share on a Case does not travel to the cloned Case, so a workflow that relied on it breaks on the copy with no error. If a manual share is load-bearing for a process, that process is fragile by construction.' }
+        ]
+      },
+      {
+        title: 'The confusion risks',
+        mins: 8,
+        blocks: [
+          { t: 'p', x: 'Because manual shares produce no notifications, no audit trail in Setup and no visible marker on the record, they are the most commonly misdiagnosed mechanism. Four specific confusions recur.' },
+          { t: 'table', head: ['Symptom reported by a user', 'Often assumed', 'Frequently the real cause'], rows: [
+            ['"I lost access to my record"', 'The manual share was removed', 'An OWD change, or the sharing user was deactivated'],
+            ['"I can see a record I should not"', 'A manual share was granted by mistake', 'A stale Apex grant, a restriction rule exemption, or ancestor access'],
+            ['"The clone is not visible to the team"', 'A sharing bug', 'The manual share was not copied by the clone'],
+            ['"Access came back after I deactivated a user"', 'A caching issue', 'The manual share row was never removed'],
+            ['"This user has far more access than their role suggests"', 'An over-broad permission set', 'Manual shares accumulated over years']
+          ]},
+          { t: 'p', x: 'The diagnostic habit is simple and worth stating: when access looks wrong, query the share rows before theorising. Manual shares are invisible in the UI, so the UI will mislead you every time.' },
+          { t: 'callout', kind: 'tip', x: 'A useful query pattern: pull all share rows for the object, group them by type and age, and look at the distribution. Manual shares usually stand out as a long tail of old rows with no corresponding rule. Anything older than a year without a recorded justification is a candidate for removal.' }
+        ]
+      },
+      {
+        title: 'Managing manual sharing as a process',
+        mins: 8,
+        blocks: [
+          { t: 'p', x: 'If you cannot stop manual sharing, govern it. Six controls, in order of how much they help.' },
+          { t: 'num', items: [
+            'Policy: state when manual sharing is permitted, who authorises it, and the maximum duration. Three lines, published.',
+            'Naming convention: require a reason in a field or a case comment when the share is created. If the platform will not carry the reason, carry it in a spreadsheet that the audit can join to.',
+            'Age-based alerting: report shares older than 60 days to the record owner, then to their manager.',
+            'Quarterly reconciliation: a batch that lists every manual share on the sensitive objects with its age and authoriser, and asks for confirmation.',
+            'Owner notification: tell the record owner when someone shares their record. Reduces both the surprise and the abuse.',
+            'Removal on ownership change: automation that strips manual shares from a record when it changes hands — with a notification, because sometimes the share was legitimate.'
+          ]},
+          { t: 'callout', kind: 'warn', x: 'Numbers worth holding onto: manual shares sit alongside declarative shares in the same rows, they consume from the same per-record sharing allocation, and a very large number of them on hot objects is a measurable contributor to recalculation time. Phase 15 treats the cost angle.' },
+          { t: 'p', x: 'One point of honesty about control six: automation that deletes manual shares on ownership change will occasionally break a legitimate cross-cover arrangement, and someone will be unhappy. Decide in advance whether that is acceptable, and communicate it, rather than discovering it.' },
+          { t: 'p', x: 'The architectural alternative, for requirements that genuinely recur, is always the same: express the pattern declaratively. Manual sharing is a good answer to "this once" and a bad answer to "this every time".' }
+        ]
+      },
+      {
+        title: 'Audit and remediation',
+        mins: 7,
+        blocks: [
+          { t: 'p', x: 'Auditing manual shares is mechanical once you have the query. The judgement is in what you do with the results.' },
+          { t: 'table', head: ['Finding', 'Severity', 'Action'], rows: [
+            ['Share on a VIP or restricted-cohort record, unauthorised', 'Critical', 'Remove immediately, investigate, check for a pattern'],
+            ['Share older than 12 months, no justification recorded', 'High', 'Contact the authoriser; remove unless confirmed'],
+            ['Share to an inactive user', 'High', 'Remove. Inert today, live on reactivation'],
+            ['Share on a record owned by a leaver', 'Medium', 'Remove, then review the whole leaver’s shares'],
+            ['Hundreds of manual shares on one object', 'Medium', 'Treat as a design problem: find the pattern and declare it properly'],
+            ['Manual shares as the only mechanism for a team’s access', 'High', 'Replace with team-based or group-based sharing']
+          ]},
+          { t: 'p', x: 'The "hundreds on one object" finding is the important one, because it means a requirement was met by manual sharing rather than designed. Fixing the instance without fixing the design guarantees it comes back within a quarter.' },
+          {
+            t: 'ex',
+            id: '8.1',
+            title: 'Find the manual shares nobody remembers',
+            obj: 'Audit manual shares on the Vantage sensitive objects, categorise every finding by severity, and produce a remediation plan.',
+            stars: 3,
+            steps: [
+              'Write the query that pulls manual shares on Member__c and Consent_Record__c with grantor, grantee, creation date and access level. Include a way to distinguish manual from rule-based rows.',
+              'Run it. Bucket the results by age: under 30 days, 30 to 180, 180 to 365, over 365.',
+              'Join to user status and produce a list of shares to inactive users, and shares on records whose owner is a leaver.',
+              'Identify the largest concentration on a single object and state what pattern you think generated it.',
+              'Write the remediation plan: what you remove, what you confirm, what you escalate, and the approval you need for each.'
+            ],
+            verify: 'A complete inventory with severity buckets, an identified root pattern behind the largest concentration, and a remediation plan that distinguishes removal from escalation.'
+          },
+          {
+            t: 'ex',
+            id: '8.2',
+            title: 'Prove the lifecycle behaviour',
+            obj: 'Empirically demonstrate what happens to a manual share across ownership change, deactivation, OWD change and cloning.',
+            stars: 3,
+            steps: [
+              'Create a manual share on a Member__c and record the share row Id.',
+              'Change the record’s owner and re-query. Does the row survive?',
+              'Deactivate the sharing user, then the receiving user, and re-query after each. Then reactivate the receiving user and check whether access returns.',
+              'Clone the record and check whether the manual share exists on the clone.',
+              'Change the object’s OWD in a sandbox and record what happens to the row. Do this last, and read Phase 2 first.'
+            ],
+            verify: 'Four empirical answers matching the lifecycle table, with the share row Id recorded at each step. The deactivation-then-reactivation result is the one to remember.'
+          },
+          {
+            t: 'ex',
+            id: '8.3',
+            title: 'Write the manual-sharing policy',
+            obj: 'Produce a three-page policy plus the technical controls that enforce it, ready for a CISO review.',
+            stars: 3,
+            steps: [
+              'State when manual sharing is permitted, who authorises it, and the maximum duration. One page, no jargon.',
+              'Specify the required recording: reason, authoriser, expiry. Decide where that is stored if the platform cannot carry it.',
+              'Define the four technical controls: age-based alerting, owner notification, quarterly reconciliation, removal on ownership change.',
+              'State which Vantage objects manual sharing is prohibited on entirely, and give the mechanism that replaces it for each.',
+              'Write the exception process — how someone requests a share, and what evidence the requester must supply.'
+            ],
+            verify: 'A policy a non-technical reviewer can read, four named technical controls with owners, prohibited objects with named replacements, and an exception path with evidence requirements.'
+          },
+          { t: 'selfcheck', q: 'A deactivated employee is reactivated and immediately has access to records they should not. Why?', a: 'Because their manual share rows were never deleted, so the access was inert while they were inactive and returned on reactivation. This is the single most common surprise with manual shares and the strongest argument for the reconciliation job — inactivity hides the leak rather than removing it.' }
+        ]
+      }
+    ],
+    quiz: {
+      title: 'Phase 8 Quiz · Manual Sharing & Overrides',
+      mins: 6,
+      questions: [
+        {
+          q: 'Which is a legitimate use of manual sharing?',
+          opts: ['A named exception with a documented end date', 'Regional agents reading members in their region', 'A rotating review board reading all claims', 'Managers reading their reports’ records'],
+          a: 0,
+          why: 'Exceptions with an end, migration steps and tests are the honest cases. The other three are patterns, and patterns belong in declarative mechanisms.'
+        },
+        {
+          q: 'What happens to a manual share when the record’s owner changes?',
+          opts: ['It is removed', 'It survives — the row is independent of ownership', 'It converts to role-hierarchy access', 'It expires'],
+          a: 1,
+          why: 'Manual shares are independent of ownership, which is why a contractor’s grant can outlive the engagement. Automate removal on ownership change with a notification.'
+        },
+        {
+          q: 'A user is deactivated and reactivated a year later. What happens to their manual shares?',
+          opts: ['They were removed on deactivation', 'They were inert while inactive and the access returns on reactivation', 'They expire after 12 months', 'They transfer to the manager'],
+          a: 1,
+          why: 'Inactivity hides the leak rather than removing it. This is the strongest argument for a reconciliation job.'
+        },
+        {
+          q: 'Does cloning a record copy its manual shares to the clone?',
+          opts: ['Yes', 'No'],
+          a: 1,
+          why: 'No. Any process that relied on a manual share breaks on the clone with no error, which makes such processes fragile by construction.'
+        },
+        {
+          q: 'True or false: a manual share is removed when the object’s OWD is changed.',
+          opts: ['True', 'False'],
+          a: 0,
+          why: 'An OWD change is a re-evaluation of default access, and manual shares can be lost as a result. This is a genuine risk during the Phase 2 change wave.'
+        },
+        {
+          q: 'Why are manual shares hard to diagnose?',
+          opts: ['They are encrypted', 'They produce no notification, no visible marker on the record and no Setup entry', 'They are stored in a separate org', 'They expire immediately'],
+          a: 1,
+          why: 'They are invisible in the UI, so the UI will mislead you. Query the share rows before theorising about why someone can see a record.'
+        },
+        {
+          q: 'A user reports they can see a record they should not. You suspect a manual share. What first?',
+          opts: ['Recalculate sharing', 'Check the object’s OWD', 'Query the share rows for that record', 'Reset the user’s permissions'],
+          a: 2,
+          why: 'Query the share rows and look for a stale row and its creation date. Recalculation will not remove a manual share, and OWD changes make things worse.'
+        },
+        {
+          q: 'You find 400 manual shares on Claim__c. What does that indicate?',
+          opts: ['A high-volume support process', 'A requirement that was met by manual sharing instead of designed', 'A platform limit', 'Healthy exception handling'],
+          a: 1,
+          why: 'It is a design problem. Find the pattern and declare it properly with a group, a team or a rule — otherwise it returns within a quarter.'
+        },
+        {
+          q: 'Which control reduces manual-sharing abuse most effectively?',
+          opts: ['Prohibiting manual sharing org-wide', 'Notifying the record owner when their record is shared', 'Increasing OWD to Public Read Only', 'Requiring users to be in the same role'],
+          a: 1,
+          why: 'Owner notification is the only control that both deters abuse and surfaces legitimate needs early. Prohibition just pushes people into Apex grants, which are invisible.'
+        },
+        {
+          q: 'Can a manual share grant access to an external user?',
+          opts: ['Yes, directly', 'No — external access requires a guest user, sharing set or Experience Cloud mechanism'],
+          a: 1,
+          why: 'Manual sharing is internal. External users get access through guest user configuration, sharing sets or the external account hierarchy — Phase 9.'
+        },
+        {
+          q: 'Manual shares consume from the same allocation as declarative shares. Consequence?',
+          opts: ['None', 'A large manual-sharing tail on a hot object can measurably increase recalculation time', 'Declarative shares are lost', 'The org hits a licence limit'],
+          a: 1,
+          why: 'They are rows in the same tables. Old manual shares are a measurable contributor to recalculation cost — the performance angle of Phase 15.'
+        },
+        {
+          q: 'Automation that strips manual shares on ownership change should:',
+          opts: ['Run silently', 'Notify, because sometimes the share was legitimate and the owner needs to know', 'Be permanent, never removed', 'Apply only to Accounts'],
+          a: 1,
+          why: 'It will occasionally break a legitimate cross-cover arrangement. Decide whether that is acceptable in advance and communicate it, rather than discovering it in production.'
+        }
+      ]
+    }
+  },
+  /* ─────────────────────────── PHASE 9 ─────────────────────────── */
+  {
+    id: 'external',
+    n: 9,
+    title: 'External Users & Experience Cloud',
+    icon: '🌐',
+    color: '#047857',
+    exam: 'records',
+    tagline: 'Guest users, sharing sets and the external account hierarchy',
+    guide: '09-External-Users-Experience-Cloud.md',
+    art: [
+      { label: 'Guest-user permission set', href: 'force-app/main/default/permissionsets/Vantage_Member_Portal_Guest.permissionset-meta.xml' },
+      { label: 'Sharing set rules', href: 'docs/architecture/external-sharing-model.md' }
+    ],
+    objectives: [
+      'Explain the guest user model: one guest user per Experience Cloud site, sharing the same profile and permission set',
+      'Choose correctly among sharing sets, external account hierarchy, account sharing rules and the guest-user permission set',
+      'Reason about the difference between internal and external sharing evaluation, and why it changes your design',
+      'Design external access that is broad enough to work and narrow enough to be defensible'
+    ],
+    lessons: [
+      {
+        title: 'The guest user, precisely',
+        mins: 9,
+        blocks: [
+          { t: 'p', x: 'There is no separate external licence per user in most Experience Cloud designs. Instead, each Experience Cloud site has a guest user, and every external visitor to that site runs as that single guest user with elevated system permissions.' },
+          { t: 'callout', kind: 'warn', x: 'Elevated. This is the point that decides every external design. The guest user typically runs with Modify All Data or View All Data because it must be able to create and query records for people it has never seen. The security boundary is therefore not the guest user’s permissions — it is the per-record sharing configuration beneath it.' },
+          { t: 'h', x: 'Two consequences that follow immediately' },
+          { t: 'num', items: [
+            'If you get the sharing wrong, the guest user still executes the query and the record-level filter is the only thing standing between the external user and the data.',
+            'Record visibility for all external users of a site is determined by the union of every sharing mechanism you have configured for that guest user. There is no per-external-user permission layer beyond sharing.'
+          ]},
+          { t: 'p', x: 'The correct mental model: the guest user is a shared credential with superuser powers, and your entire external security design is the set of rules that decide which records it is allowed to touch on behalf of the person currently logged in.' },
+          { t: 'table', head: ['Fact', 'Detail', 'Consequence for design'], rows: [
+            ['One guest user per site', 'Not per external user, not per person', 'The guest user is a chokepoint you can inspect'],
+            ['Profile is the Agentforce Guest User profile', 'Often modified org-wide', 'Changing it affects every external site — treat it as critical'],
+            ['Permission set is Guest User Sharing', 'Holds the actual external permissions', 'Scope it precisely; it is the object boundary'],
+            ['Often Modify All Data', 'Needed to bootstrap', 'Per-record sharing is the only real control'],
+            ['Site URL is the boundary', 'Different sites, different guest users, different exposure', 'Separate sites for separate trust levels']
+          ]},
+          { t: 'selfcheck', q: 'The guest user has Modify All Data. Is that a vulnerability?', a: 'Not by itself — it is the standard pattern, and the system cannot bootstrap access otherwise. The vulnerability would be relying on it. Your design must make per-record sharing the effective boundary, which means verifying empirically what a real external user can query, not reading the permission set. If you cannot demonstrate that empirically, you do not know what you have.' }
+        ]
+      },
+      {
+        title: 'Internal versus external sharing evaluation',
+        mins: 9,
+        blocks: [
+          { t: 'p', x: 'This is the concept most likely to appear in a scenario question, and it explains several behaviours that look like bugs.' },
+          { t: 'table', head: ['', 'Internal users', 'External users via guest'], rows: [
+            ['Sharing rules evaluated', 'Yes', 'Yes'],
+            ['Role hierarchy', 'Yes', 'No — no role'],
+            ['OWD', 'Yes', 'Yes'],
+            ['Owner-based access', 'Yes', 'Yes'],
+            ['Apex sharing', 'Yes', 'Yes — evaluated against the guest user'],
+            ['Manual sharing to the person', 'Yes', 'No — there is no internal user to share with'],
+            ['Sharing sets', 'No', 'Yes'],
+            ['External account hierarchy', 'No', 'Yes'],
+            ['Account sharing rules', 'Yes', 'Partially — depends on configuration'],
+            ['Territory sharing', 'Yes', 'Yes'],
+            ['Role-based rules naming roles', 'Yes', 'No — evaluates to nothing']
+          ]},
+          { t: 'callout', kind: 'warn', x: 'Two rows cause real incidents. Role-hierarchy access never applies to an external user, so any grant you believed was covered by the hierarchy is not covered at all externally. And Apex sharing is evaluated against the guest user, not the logged-in external person — which means your "personalised" Apex logic must read the external contact from the session, or it will grant everything to the guest and nothing specific to the person.' },
+          { t: 'p', x: 'The practical method is empirical, and it should be part of your definition of done: log in as a real external user and try to read a record you did not intend them to have. Attempt the query. Anything that returns is a finding, regardless of what the configuration appears to say.' },
+          { t: 'p', x: 'Write your findings down as a matrix of persona versus record type. That matrix is the deliverable for this phase, and it is the artifact a compliance reviewer will ask for.' }
+        ]
+      },
+      {
+        title: 'The four external mechanisms, side by side',
+        mins: 10,
+        blocks: [
+          { t: 'p', x: 'Four mechanisms grant external access, and each solves a different problem. Choosing wrong is common because they all appear under "sharing settings".' },
+          { t: 'table', head: ['Mechanism', 'Grants to', 'Best for', 'Does not do'], rows: [
+            ['Sharing set', 'Everyone related to a set of accounts, via a sharing set rule', 'Partners or providers who need a slice of many customers’ records', 'Per-person scoping; every member of the set sees the same records'],
+            ['Sharing set rule', 'A group of contacts, on records matching a criterion', 'Member portal users seeing their own member records', 'Anything outside the criteria; it is not a rule on the Contact object'],
+            ['External account hierarchy', 'Contacts at the same external Account', 'Anything where the account relationship is the boundary', 'Work across accounts; it is hierarchical, not selective'],
+            ['Account sharing rules', 'Groups on Account records', 'Granting a partner group access to specific accounts', 'Per-contact precision within the account'],
+            ['Guest user permission set', 'The guest user, org-wide', 'Defining the object boundary — what is reachable at all', 'Record-level scoping of any kind']
+          ]},
+          { t: 'callout', kind: 'tip', x: 'The decisive question: what identifies the person whose records they should see? If the answer is "an account relationship" — the external account hierarchy or a sharing set. If the answer is "a record with my name on it" — a sharing set rule. If the answer is "a specific account" — an account sharing rule. If the answer is "any object at all" — you are choosing the permission set.' },
+          { t: 'h', x: 'The Vantage portal requirements, mapped' },
+          { t: 'table', head: ['Requirement', 'Mechanism', 'Why'], rows: [
+            ['A member sees their own Member__c, Claims and Consent_Record__c records', 'Sharing set rule on Contact', 'The criterion is "contact equals the session contact"'],
+            ['A broker sees the members of the employer they represent', 'Sharing set', 'The relationship is an account relationship across many accounts'],
+            ['A provider in the network sees their own Provider_Network__c entry', 'Sharing set rule', 'It is record-scoped, not account-wide'],
+            ['A partner admin sees all accounts under one parent account', 'External account hierarchy', 'Purely hierarchical'],
+            ['An anonymous visitor sees a public directory', 'Guest user permission set + Apex gating', 'No person context, so no sharing rule applies']
+          ]},
+          { t: 'p', x: 'Note the last row, because it is where designs go wrong. With no authenticated contact, no sharing set rule can match, so anything the guest user can query is available to everyone who loads the page. Public content therefore has to be separated by object, not by rule.' },
+          { t: 'selfcheck', q: 'A provider should see their own Provider_Network__c entry and nothing else. Sharing set or sharing set rule?', a: 'A sharing set rule. A sharing set grants access to a slice of many accounts, which is broader than needed and would expose other providers’ data if the set were shared. A sharing set rule targets records matching a criterion — "Provider_Network__c where Related_Contact__c equals the session contact" — which is exactly the shape of the requirement.' }
+        ]
+      },
+      {
+        title: 'Territories and field-service externals',
+        mins: 8,
+        blocks: [
+          { t: 'p', x: 'Territory-based sharing deserves separate treatment because it is the one declarative mechanism that works for external users based on a spatial or hierarchical model.' },
+          { t: 'p', x: 'A territory is a hierarchical structure of accounts and contacts. A territory-based sharing rule grants access to records based on territory membership, and it evaluates for external users through the guest user — which means a field agent’s territory model can drive what their external-facing views return.' },
+          { t: 'callout', kind: 'warn', x: 'The trap: territory-based sharing rules are evaluated against the guest user for external requests, and the guest user is not in any territory. If you assume territory rules scope external access, you may be relying on them for internal access only. Verify the external behaviour empirically rather than by reasoning from the configuration.' },
+          { t: 'p', x: 'Territory management itself also has a cost dimension: territories support assignment rules, and assignment rules recalculate when territory membership changes. At Vantage, with 1,200 agents across overlapping metro areas, that is a Phase 15 conversation.' },
+          { t: 'h', x: 'Where the standard objects stop helping' },
+          { t: 'p', x: 'Sharing sets and sharing set rules work on standard objects and on custom objects, which is convenient at Vantage. What they do not do is express a condition across several related records in a way the sharing-set-rule UI can hold. Where your requirement involves computation, you are back to Apex evaluated against the guest user — which means your Apex must read the external contact from the current context, or it will operate on the wrong identity.' }
+        ]
+      },
+      {
+        title: 'Verifying external access properly',
+        mins: 8,
+        blocks: [
+          { t: 'p', x: 'External access is verified empirically or not at all. The method matters as much as the result.' },
+          { t: 'num', items: [
+            'Enumerate the external personas: anonymous, member, broker, provider, partner admin, support agent impersonating a member.',
+            'For each persona, write down the objects and fields you intend them to reach. This is the design, stated positively.',
+            'Log in as that persona and attempt to read one record of each type you intend to deny. Attempt the query; do not reason about it.',
+            'Record anything that returns. Every finding is either a permission-scope gap or a sharing gap.',
+            'Repeat after every change to the guest user permission set, the sharing sets, or the site’s configuration.'
+          ]},
+          { t: 'callout', kind: 'tip', x: 'Test the boundary cases, not the happy path: a member whose Contact has no related Member__c, a broker whose employer account has been deleted, a provider with a deactivated Contact, and an anonymous request to a page that requires context. Broken references and missing context are where external designs leak.' },
+          { t: 'p', x: 'Keep the persona-versus-record-type matrix in version control next to the permission set. When someone asks "can a broker see a member’s clinical notes" a year from now, the answer should be a lookup, not an investigation.' },
+          {
+            t: 'ex',
+            id: '9.1',
+            title: 'Build and break the member portal sharing model',
+            obj: 'Configure a member portal so a member sees their own records, then empirically find three ways to break it.',
+            stars: 3,
+            steps: [
+              'Configure the guest user permission set with Read on Member__c, Claim__c and Consent_Record__c, and create on Contact only.',
+              'Create a sharing set rule matching records whose Related_Contact__c equals the current session contact.',
+              'Log in as a real member and confirm they see their own three record types.',
+              'Then attempt, as that same member, to read another member’s Member__c, a Claim__c belonging to someone else, and a Consent_Record__c from a different year. Record each result.',
+              'For anything that returned, identify which mechanism allowed it and remove it.'
+            ],
+            verify: 'Correct positive access, three documented negative results, and any leak found and closed with the responsible mechanism named.'
+          },
+          {
+            t: 'ex',
+            id: '9.2',
+            title: 'Prove the internal-versus-external divergence',
+            obj: 'Build a case where a mechanism works internally and does nothing externally, and document it with evidence.',
+            stars: 3,
+            steps: [
+              'Choose a mechanism that behaves differently for external users. The role hierarchy is the cleanest example.',
+              'Create a role-based sharing rule granting access to a role, and put the records in scope.',
+              'Confirm an internal user in that role can read them.',
+              'Confirm an external user with an equivalent relationship cannot, and write down why.',
+              'Repeat with an Apex sharing grant and show that it evaluates against the guest user rather than the logged-in person.',
+              'Produce a one-page table of the eight mechanisms you tested, internal versus external.'
+            ],
+            verify: 'Empirical proof of at least two divergences with the mechanism named each time, and a reusable eight-row comparison table.'
+          },
+          {
+            t: 'ex',
+            id: '9.3',
+            title: 'Design the whole external surface',
+            obj: 'Produce the external access design for Vantage: personas, mechanisms, permission scope and the verification plan.',
+            stars: 3,
+            steps: [
+              'Define the six personas from the lesson and state the business purpose of each.',
+              'For each persona, choose the mechanism and justify it on the decisive question — account relationship, record criterion, or object scope.',
+              'Write the guest user permission set scope. Be specific about every object, and record why each is present.',
+              'State which Vantage objects are excluded from external reach entirely, and how you enforce that.',
+              'Write the verification plan: the persona matrix, the negative tests, and the re-verification trigger.'
+            ],
+            verify: 'Six personas with justified mechanisms, a complete permission scope with a written reason per object, a named excluded set, and a verification plan including re-verification triggers.'
+          },
+          { t: 'selfcheck', q: 'An external user can query Member__c directly through the site’s API. The guest user permission set grants Read on Member__c. What is wrong?', a: 'Nothing about the permission set is wrong — but Read on Member__c at the object level means the guest user can attempt any Member__c query, and if a sharing set rule fails to match, the record may be returned. Object permission defines reachability; sharing defines scope. Verify empirically with a real external user, and check specifically that the sharing set rule is actually matching — a Contact with a broken or missing relationship is the usual cause of a rule that silently matches nothing.' }
+        ]
+      }
+    ],
+    quiz: {
+      title: 'Phase 9 Quiz · External Users & Experience Cloud',
+      mins: 7,
+      questions: [
+        {
+          q: 'How many guest users does an Experience Cloud site have?',
+          opts: ['One per external user', 'One per site', 'One per permission set', 'One per brand or locale'],
+          a: 1,
+          why: 'One per site. Every external visitor runs as that guest user, which is why per-record sharing beneath it is the real security boundary.'
+        },
+        {
+          q: 'Why does the guest user typically have Modify All Data?',
+          opts: ['It is an org-wide requirement', 'It must bootstrap access for people it has never seen', 'Salesforce requires it for Apex', 'It is a legacy default that can be removed safely'],
+          a: 1,
+          why: 'The system cannot bootstrap per-user access another way. The consequence is that per-record sharing is the only effective control, which makes empirical verification mandatory.'
+        },
+        {
+          q: 'Does role-hierarchy access apply to external users?',
+          opts: ['Yes', 'No'],
+          a: 1,
+          why: 'No. External users have no role. Any grant you believed the hierarchy covered is not covered externally — the most common external access gap.'
+        },
+        {
+          q: 'Against whom is Apex sharing evaluated for an external request?',
+          opts: ['The logged-in external contact', 'The guest user', 'The site owner', 'The record owner'],
+          a: 1,
+          why: 'Against the guest user. So Apex logic meant to be personalised must read the external contact from the session, or it will act on the wrong identity entirely.'
+        },
+        {
+          q: 'Which mechanism fits "a provider sees their own Provider_Network__c entry and nothing else"?',
+          opts: ['Sharing set', 'Sharing set rule', 'External account hierarchy', 'Account sharing rules'],
+          a: 1,
+          why: 'A sharing set rule targets records matching a criterion. A sharing set is a slice of many accounts and would expose other providers’ data if shared.'
+        },
+        {
+          q: 'Which mechanism fits "a broker sees members of the employer they represent, across many accounts"?',
+          opts: ['Sharing set rule', 'Sharing set', 'Guest user permission set', 'Manual sharing'],
+          a: 1,
+          why: 'A sharing set, because the boundary is an account relationship spanning many accounts. The rule variant is record-criterion-scoped and does not fit this shape.'
+        },
+        {
+          q: 'A partner admin should see everything under one parent account. Best mechanism?',
+          opts: ['Sharing set rule', 'External account hierarchy', 'Account team', 'Role hierarchy'],
+          a: 1,
+          why: 'The requirement is purely hierarchical, which is exactly what the external account hierarchy models.'
+        },
+        {
+          q: 'Why must an anonymous visitor’s public directory be separated by object rather than by sharing rule?',
+          opts: ['Sharing rules are slower', 'With no authenticated contact, no sharing set rule can match, so anything queryable is available', 'Object access cannot be granted to guest users', 'Anonymous users cannot run queries'],
+          a: 1,
+          why: 'No person context means no rule match. Public content therefore needs a different object boundary, not a rule.'
+        },
+        {
+          q: 'Which is NOT a difference between internal and external sharing evaluation?',
+          opts: ['Role hierarchy applies internally but not externally', 'OWD applies to both', 'Apex sharing is evaluated against the guest user externally', 'Sharing sets apply externally but not internally'],
+          a: 1,
+          why: 'OWD applies to both. Sharing rules also apply to both — which is why a criteria-based rule can be the answer for an external user, if it matches something.'
+        },
+        {
+          q: 'True or false: territory-based sharing rules scope external access through the guest user’s territory membership.',
+          opts: ['True', 'False — the guest user is in no territory, so verify empirically'],
+          a: 1,
+          why: 'Territory rules are evaluated against the guest user externally, and the guest user belongs to no territory. Do not assume territory scoping covers external access.'
+        },
+        {
+          q: 'What is the most reliable way to verify external access?',
+          opts: ['Read the guest user permission set', 'Log in as each external persona and attempt to read records you intend to deny', 'Run a security scan', 'Check the OWD setting'],
+          a: 1,
+          why: 'Attempt the query. Anything that returns is a finding, regardless of what the configuration appears to say. The permission set defines reachability, not scope.'
+        },
+        {
+          q: 'What most often causes a sharing set rule to silently match nothing?',
+          opts: ['OWD set to Public', 'The Contact has a missing or broken relationship to the record', 'Too many sharing rules on the object', 'The guest user lacks Modify All'],
+          a: 1,
+          why: 'Broken references and missing context are where external designs leak. Test the boundary cases — a Contact with no related record — not just the happy path.'
+        }
+      ]
+    }
+  },
+  /* ─────────────────────────── PHASE 10 ─────────────────────────── */
+  {
+    id: 'objectperms',
+    n: 10,
+    title: 'Object Permissions & CRUD',
+    icon: '🔐',
+    color: '#BE123C',
+    exam: 'permissions',
+    tagline: 'The outer wall — and why Read/Write is never the default answer',
+    guide: '10-Object-Permissions.md',
+    art: [
+      { label: 'Permissions matrix', href: 'docs/architecture/permissions-matrix.md' },
+      { label: 'Permission set definitions', href: 'force-app/main/default/permissionsets/' }
+    ],
+    objectives: [
+      'State precisely how object permissions interact with record-level sharing, in both directions',
+      'Choose the narrowest CRUD level that lets a user do their job, and justify each choice',
+      'Distinguish object permissions from record types and page layouts as access controls',
+      'Explain why "Read" without "View All" is the safest combination for most users'
+    ],
+    lessons: [
+      {
+        title: 'How permissions and sharing compose',
+        mins: 8,
+        blocks: [
+          { t: 'p', x: 'This is the single most important conceptual point in the exam, and it is a two-way street that candidates consistently understand in only one direction.' },
+          { t: 'table', head: ['Direction', 'Statement', 'Consequence'], rows: [
+            ['Permissions cap sharing', 'A user with no Read on an object cannot see a shared record of that object', 'Sharing cannot grant access to an object the user cannot read at all'],
+            ['Sharing scopes permissions', 'A user with Read on an object sees only the records sharing gives them', 'Read is an upper bound, not a grant']
+          ]},
+          { t: 'callout', kind: 'warn', x: 'So the effective answer to "can this user see this record" is an intersection: object and field permissions on one side, record-level access on the other. Both must be satisfied. Neither system knows about the other, and a mistake in either one produces the same symptom — a user who cannot see something they should, or can see something they should not.' },
+          { t: 'p', x: 'A useful corollary: "they cannot see it, so it is safe" is not a security conclusion. If the user cannot see the record, they may still be able to query a sensitive field on the records they can see, and if a future permission change grants object access, the sharing configuration is what remains. Both layers must be right.' },
+          { t: 'selfcheck', q: 'A user has Read on Claim__c and a sharing rule grants them Read on critical claims. They say they can see none of them. What are the candidate causes?', a: 'In order: (1) the rule criteria do not match — remember silent zero matches, and check for nulls in the criterion’s field; (2) the rule targets a group the user is not in — check membership, not the rule; (3) FLS hides the fields the user is looking at, so the records appear but the data does not; (4) a recalculation is in progress and the share rows have not settled; (5) a restriction rule removed access the user previously had. Note that Read on the object being present tells you permissions are not the first problem — start with the rule.' }
+        ]
+      },
+      {
+        title: 'The CRUD+F matrix',
+        mins: 9,
+        blocks: [
+          { t: 'p', x: 'Object permissions are five capabilities plus two extras, and the naming conventions are inconsistent enough to be worth learning precisely.' },
+          { t: 'table', head: ['Permission', 'Means', 'Vantage example'], rows: [
+            ['Read', 'View records and query them', 'Any clinician reads claims assigned to them'],
+            ['Create', 'Create new records; not edit others’', 'Intake agents create Claims'],
+            ['Edit', 'Edit any record they can otherwise access', 'Claims adjusters correct claim data'],
+            ['Delete', 'Remove records entirely', 'Almost never granted — remediation deletes are done by a service job'],
+            ['View All', 'Read every record of the object, bypassing sharing', 'Compliance auditors, and reconciliation jobs'],
+            ['Modify All', 'Read, edit and delete every record, bypassing sharing', 'Data loader users, integration users'],
+            ['View All Data / Modify All Data', 'Across all objects and all records', 'Guest user, integration users, some system contexts']
+          ]},
+          { t: 'callout', kind: 'warn', x: '"All" means all, and it is absolute. It is not scoped by OWD, by sharing rules, by restriction rules, or by the role hierarchy. Nothing in the declarative model can subtract from it. Every View All or Modify All grant is therefore a permanent, unrecoverable decision unless you change the permission again.' },
+          { t: 'h', x: 'The field permissions table' },
+          { t: 'p', x: 'For each of Read, Edit, Modify on a custom field, you get a separate checkbox: Readable, Editable, and — for most fields — a separate set for the field’s required entry. The pattern is "the action you can take on the record" crossed with "what you can do with this field". A field can be readable but not editable, which is how you protect an audit field from change while keeping it visible.' },
+          { t: 'callout', kind: 'tip', x: 'At Vantage, Consent_Record__c.Evidence_Hash__c is the textbook case: readable for audit, never editable by anyone except the integration. And Member__c.SSN_Last4__c is the case for not-readable at all — which brings us to Phase 12.' }
+        ]
+      },
+      {
+        title: 'Choosing the narrowest sufficient level',
+        mins: 8,
+        blocks: [
+          { t: 'p', x: 'The design question is not "what does this user need" but "what is the minimum that lets them do their job without granting them the power to cause an incident".' },
+          { t: 'table', head: ['Job', 'Object permissions that should suffice', 'Why not more'], rows: [
+            ['Claims adjuster', 'Read, Edit on Claim__c', 'No Delete — an adjuster should never remove a claim'],
+            ['Intake agent', 'Read, Create, Edit on Member__c and Claim__c', 'No Delete on Member__c — records must be inactivated, not deleted'],
+            ['Compliance auditor', 'Read on all sensitive objects; View All on Consent_Record__c', 'No Edit anywhere — audit is read-only by nature'],
+            ['Regional manager', 'Read on all relevant objects; access via the role hierarchy', 'No View All — the hierarchy already scopes it'],
+            ['Data steward', 'Read, Edit on Member__c; no Delete on any clinical object', 'Delete on Member__c would break referential history irreversibly'],
+            ['Integration user', 'Modify All on the objects it synchronises; View All elsewhere', 'Modify All Data only if cross-object logic truly requires it']
+          ]},
+          { t: 'callout', kind: 'warn', x: 'Delete is the permission to argue about. It is the only one that destroys evidence. In a healthcare org, Member__c, Claim__c and Consent_Record__c should have Delete withheld from all human users, with an inactivate or status-change workflow instead. Hard delete should be reserved for a named service identity, if used at all.' },
+          { t: 'p', x: 'The counter-argument to restricting Delete is legitimate: some cleanup genuinely requires it, and withholding it leads people to build Apex that deletes records anyway, which is worse because it is invisible. The resolution is a documented, narrow, audited path — not a general permission.' },
+          { t: 'selfcheck', q: 'A permission set grants Edit on Claim__c to a user whose profile has Read but not Edit. Does it work, and what follows for profile design?', a: 'Yes — profile and permission sets both contribute, and the effective permission is the union, so the user gets Edit. Object permissions are additive across profile and permission sets. What does NOT work is subtraction: a permission set cannot remove something the profile grants, except through restrict settings for fields. That asymmetry is why every profile in a permission-set-group architecture must be a minimal baseline — a generous profile cannot be corrected with permission sets, and the profile’s Tab and object settings are a design decision rather than a default.' }
+        ]
+      },
+      {
+        title: 'Objects that are not access controls',
+        mins: 7,
+        blocks: [
+          { t: 'p', x: 'Three things get mistaken for access controls. They are not, and confusing them produces models that look secure and are not.' },
+          { t: 'table', head: ['Thing', 'What it actually does', 'Why it is not an access control'], rows: [
+            ['Record type', 'Changes available fields and layout on a page', 'Every record is still readable if sharing allows it'],
+            ['Page layout', 'Controls field visibility and layout for the user', 'A hidden field can still be queried via API if FLS allows it'],
+            ['Approval process', 'Gates a state change', 'Does not restrict read access at all'],
+            ['Validation rule', 'Blocks a bad value', 'No bearing on who can read or write the record'],
+            ['Record ownership change', 'Moves the record to a new owner', 'The previous owner loses access — which is a real access effect, via ownership, not via the change itself']
+          ]},
+          { t: 'callout', kind: 'warn', x: 'The page-layout row is the dangerous one. Removing a field from a layout looks like hiding it, and for a user in the UI it works. But the API and reports honour FLS, not layouts. Any field hidden only by layout is fully readable by anyone who can query the object — which is why layout and FLS must be aligned, and why layout alone is never an acceptable control for sensitive data.' },
+          { t: 'p', x: 'A subtle related point: FLS applies to the running user, including system-mode contexts unless they declare otherwise. Phase 14. If a field is not readable, it is not readable — including from a report, an export, a Lightning component and a guest user.' }
+        ]
+      },
+      {
+        title: 'Negative permissions and the special exceptions',
+        mins: 8,
+        blocks: [
+          { t: 'p', x: 'Two features break the "union of permissions" model, and both matter for sensitive data.' },
+          { t: 'h', x: 'Restrict "Read" and similar in the permission set' },
+          { t: 'p', x: 'A permission set can be configured so that it does not add a field permission, and can even remove field access granted elsewhere. This is the only declarative way to say "everyone else may read this, but you may not", and it is the right tool when a single role must be excluded from an otherwise broad grant.' },
+          { t: 'callout', kind: 'tip', x: 'Example at Vantage: a permission set granting Read on Member__c, plus a second permission set restricting Read on Member__c.SSN_Last4__c for the Underwriting role. Combine with a record-level sharing rule that excludes underwriting records, and the role cannot read the field at all. Neither mechanism alone is sufficient; together they are defensible.' },
+          { t: 'h', x: 'View All and its interaction with sharing' },
+          { t: 'p', x: 'View All grants read on every record of the object regardless of OWD and regardless of sharing rules. One important exception: restriction rules. A restriction rule can remove View All access where the object is configured to allow it — which is why restriction rules were introduced, and why they only ever apply to the declarative model, never to Apex or ownership.' },
+          { t: 'p', x: 'So the complete picture for a given user and record: permissions cap it, sharing scopes it, View All overrides both, restriction rules can claw back from View All, but nothing claws back from Modify All. Modify All is the true ceiling.' }
+        ]
+      },
+      {
+        title: 'At scale: permission set sprawl',
+        mins: 6,
+        blocks: [
+          { t: 'p', x: 'Permission sets are additive, so the number of assigned sets per user is the number of things you must evaluate to answer any question about a user. Sprawl is a security problem, not just a maintenance one.' },
+          { t: 'p', x: 'The tell: a user assigned seven permission sets where two would do, one of which grants a "miscellaneous" bundle of unrelated access. That bundle is where every unexplained access finding eventually leads.' },
+          { t: 'callout', kind: 'tip', x: 'The discipline: one permission set per coherent job function, no bundles of unrelated access, and a documented answer to "why does this user have this set". If you cannot name the job function a permission set serves, delete it and see who breaks.' },
+          {
+            t: 'ex',
+            id: '10.1',
+            title: 'Build the Vantage permissions matrix from job functions',
+            obj: 'Derive object and field permissions for eight Vantage job functions, granting the narrowest sufficient level and justifying every "All" grant.',
+            stars: 3,
+            steps: [
+              'List the eight job functions from the Vantage scenario: intake agent, claims adjuster, underwriter, regional manager, compliance auditor, broker (external), member (external), integration user.',
+              'For each, and for each of the five custom objects plus Account and Contact, specify the CRUD level required.',
+              'Mark every View All or Modify All grant, and write the justification. If you cannot justify one, remove it.',
+              'Cross-check against the sharing design from earlier phases. Any user with View All does not need a sharing rule — note the redundancy and remove one of the two.',
+              'Identify the two job functions where you deliberately chose different permission paths for the same data, and state why.'
+            ],
+            verify: 'A complete matrix, every "All" justified in writing, redundancy between View All and sharing rules identified and resolved, and two deliberate differences documented.'
+          },
+          {
+            t: 'ex',
+            id: '10.2',
+            title: 'Prove the two-way interaction empirically',
+            obj: 'Demonstrate both directions of the permissions-and-sharing intersection with real tests, not reasoning.',
+            stars: 3,
+            steps: [
+              'Test direction one: a user with sharing grants but no object Read permission. Confirm they cannot see the records. Record what they do see instead.',
+              'Test direction two: a user with object Read permission but no sharing grants. Confirm they see only owned or default-accessible records.',
+              'Test field level: a user with Read on Member__c but no read on a sensitive field. Confirm the field is absent from the UI, absent from a report, and absent from a direct API query.',
+              'Test a layout-only hiding: remove a field from the page layout without touching FLS and re-run the API query.',
+              'Write the four findings as the empirical evidence that layout is not a control and FLS is.'
+            ],
+            verify: 'Four empirical results, including the layout-versus-FLS demonstration, each with the query or UI evidence recorded.'
+          },
+          {
+            t: 'ex',
+            id: '10.3',
+            title: 'Strip the permission set sprawl',
+            obj: 'Reduce a user’s permission set assignments to the minimum that preserves their job function, and prove nothing broke.',
+            stars: 3,
+            steps: [
+              'Pick three users with four or more permission sets assigned.',
+              'For each set, identify the job function it serves. Mark any you cannot attribute.',
+              'Consolidate: for each unattributed set, list every permission in it and decide whether it belongs to an existing function or should be deleted.',
+              'Produce the proposed assignment list per user, then test each user’s core workflows in a sandbox.',
+              'Document the before/after permission diff for each user, and flag any workflow that now fails rather than quietly re-adding a bundle.'
+            ],
+            verify: 'Reduced assignment counts, every remaining set attributed to a named function, all three users’ core workflows passing, and no re-introduced miscellaneous bundle.'
+          },
+          { t: 'selfcheck', q: 'A user can see a Claim__c but the Total_Paid__c field appears blank in the UI. They are on Lightning. What are the likely causes?', a: 'In order: FLS makes the field non-readable for them — correct, and it applies to reports and API too. A page layout omits it — UI-only, and the API would still return it, so this is a UI symptom rather than a control. Or a formula or roll-up field evaluates to blank because a dependency is empty or FLS blocks the underlying field — real, and a good reminder that FLS on a source field makes dependent formulas blank. Check FLS first, because it is the actual control.' }
+        ]
+      }
+    ],
+    quiz: {
+      title: 'Phase 10 Quiz · Object Permissions & CRUD',
+      mins: 6,
+      questions: [
+        {
+          q: 'A user has no Read permission on Claim__c. A sharing rule grants them access to a Claim__c. What happens?',
+          opts: ['They can read it, because sharing grants trump permissions', 'They cannot read it — permissions cap sharing', 'They can read it but not edit it', 'It depends on the OWD setting'],
+          a: 1,
+          why: 'Permissions and sharing intersect. Permissions cap what sharing can deliver; sharing scopes what permissions allow.'
+        },
+        {
+          q: 'Can a permission set grant an object permission the profile lacks?',
+          opts: ['Yes — profile and permission sets both contribute, and the effective permission is the union', 'No — a permission set cannot create the first Read the profile omits', 'Only for custom objects, never for standard ones', 'Only if the permission set is assigned through a permission set group'],
+          a: 0,
+          why: 'Yes. Object permissions are additive across profile and permission sets. What cannot be done is subtraction — a permission set cannot remove what the profile grants, except through restrict settings on fields. That is why profiles must be minimal baselines.'
+        },
+        {
+          q: 'What does View All grant?',
+          opts: ['Read on all records of the object, regardless of sharing rules', 'Read and edit on all records', 'Access only to records owned by managers', 'Read on records where the user’s team is named'],
+          a: 0,
+          why: 'Read on every record of that object, bypassing OWD and sharing. Nothing declarative can subtract from it except a restriction rule where the object is configured to allow it.'
+        },
+        {
+          q: 'Which is the only permission that can bypass sharing rules entirely?',
+          opts: ['Read', 'View All', 'Edit', 'Create'],
+          a: 1,
+          why: 'View All bypasses sharing rules and OWD for that object. Edit and Create are ordinary CRUD and are scoped by sharing.'
+        },
+        {
+          q: 'Which object permission should almost never be granted to a healthcare user?',
+          opts: ['Read', 'Create', 'Delete', 'Edit'],
+          a: 2,
+          why: 'Delete destroys evidence. Withhold it from human users on clinical objects, use inactivate workflows instead, and reserve hard delete for a named service identity.'
+        },
+        {
+          q: 'A user can read Member__c but a field appears blank. FLS on a source field is the likely cause. What happens to dependent formula fields?',
+          opts: ['They still compute', 'They evaluate blank, because the dependency is not readable', 'They throw an error', 'They use the default value'],
+          a: 1,
+          why: 'FLS propagates to dependent formulas and roll-ups. This is a common and confusing symptom, and the reason FLS on an audit field must be thought through rather than applied field by field.'
+        },
+        {
+          q: 'True or false: removing a field from a page layout prevents it being read via the API.',
+          opts: ['True', 'False — layout is not an access control; the API and reports honour FLS'],
+          a: 1,
+          why: 'False. Layout only affects the UI. A layout-hidden field is fully queryable by anyone with object access and FLS read — which is why layout alone is never acceptable for sensitive data.'
+        },
+        {
+          q: 'A record type changes which fields are available on a page. Does that restrict which records a user can see?',
+          opts: ['Yes, on records of other types', 'No — record types change fields and layout, not record visibility'],
+          a: 1,
+          why: 'No. Record types are a data-entry and layout concept, not an access control.'
+        },
+        {
+          q: 'Can a restriction rule remove View All access?',
+          opts: ['No, never', 'Yes, where the object is configured to allow it'],
+          a: 1,
+          why: 'Yes, subject to the object configuration. That is a principal reason restriction rules exist — and they still cannot touch Modify All, Apex sharing or ownership.'
+        },
+        {
+          q: 'What is the ceiling that nothing in the declarative model can exceed?',
+          opts: ['View All', 'Modify All', 'Edit', 'Read/Write'],
+          a: 1,
+          why: 'Modify All. Nothing subtracts from it, so granting it is a permanent decision. View All can be clawed back by a restriction rule; Modify All cannot.'
+        },
+        {
+          q: 'Which is the best mechanism for "everyone reads Member__c, but the underwriting role cannot read SSN_Last4__c"?',
+          opts: ['A page layout change', 'A permission set restricting field read, combined with record-level sharing excluding underwriting records', 'An OWD change', 'A validation rule'],
+          a: 1,
+          why: 'Layered controls: the permission set restricts the field, and sharing excludes the records. Either alone is insufficient — one controls the field, the other the rows.'
+        },
+        {
+          q: 'Seven permission sets assigned to one user is:',
+          opts: ['Best practice for modularity', 'A security problem, since the union must be evaluated to answer any question about the user', 'Required for permission set groups', 'Only a problem if one set grants View All'],
+          a: 1,
+          why: 'Sprawl makes every access question expensive and hides unattributed "miscellaneous" access. One set per coherent job function, no unrelated bundles.'
+        }
+      ]
+    }
+  },
+  /* ─────────────────────────── PHASE 11 ─────────────────────────── */
+  {
+    id: 'psg',
+    n: 11,
+    title: 'Permission Set Groups',
+    icon: '🧩',
+    color: '#5B21B6',
+    exam: 'permissions',
+    tagline: 'The modern answer to "how many permission sets do I assign"',
+    guide: '11-Permission-Set-Groups.md',
+    art: [
+      { label: 'PSG definitions', href: 'force-app/main/default/permissionsetgroups/' },
+      { label: 'PSG assignment matrix', href: 'docs/architecture/psg-assignment-matrix.md' }
+    ],
+    objectives: [
+      'Explain the union-versus-intersection rule for permission set groups and why it is a deliberate design lever',
+      'Decide what belongs in a permission set, a permission set group, and a profile, respectively',
+      'Design a PSG-based model that reduces per-user assignment sprawl without obscuring effective access',
+      'Explain the consequences of PSG changes on users, licence counts and recalculation'
+    ],
+    lessons: [
+      {
+        title: 'What a permission set group actually is',
+        mins: 8,
+        blocks: [
+          { t: 'p', x: 'A permission set group is a container of permission sets, and its member sets are assigned and unassigned together as one. It is a packaging and assignment mechanism, not a new permission primitive.' },
+          { t: 'h', x: 'The rule that defines it' },
+          { t: 'callout', kind: 'warn', x: 'Within a permission set group, permissions are intersected, not unioned. If the group contains a set granting Read on Member__c.SSN_Last4__c and a set that does not grant it, the result is no read on that field. This is the opposite of everything else in the platform and it is the entire reason permission set groups exist: it is the declarative way to subtract.' },
+          { t: 'p', x: 'That is genuinely useful. The classic problem — everyone should read a sensitive field except one role — has historically needed Apex or a separate org, because plain permission sets only ever add. A group gives you the subtraction in configuration.' },
+          { t: 'table', head: ['Context', 'Combination rule', 'Why'], rows: [
+            ['Profile + permission sets', 'Union', 'Both contribute; the union is effective'],
+            ['Several permission sets on one user', 'Union', 'All assigned sets apply together'],
+            ['Permission sets within one PSG', 'Intersection', 'The group is the only subtractive mechanism'],
+            ['Several PSGs on one user', 'Union of the groups’ results', 'Each group resolves independently, then the results union'],
+            ['Record-level sharing', 'Always additive', 'No subtractive sharing mechanism except restriction rules']
+          ]},
+          { t: 'callout', kind: 'tip', x: 'Read row three carefully. Intersection applies only *within* a group. Across groups you are back to a union, which means two groups cannot subtract from each other — only from the sets inside themselves.' },
+          { t: 'selfcheck', q: 'A user is in two PSGs. PSG A contains a set granting Edit on Member__c and a set granting no access to a field; PSG B contains a set granting no Edit on Member__c. What is the user’s effective access?', a: 'Edit is granted — because cross-group combination is a union. PSG B’s "no Edit" contributes nothing, because a plain permission set cannot subtract. Only sets inside the *same* group intersect. If you wanted B to remove A’s Edit, they would have to be in the same group, and you would have to accept the other consequences of that grouping.' }
+        ]
+      },
+      {
+        title: 'The three-layer model',
+        mins: 9,
+        blocks: [
+          { t: 'p', x: 'The durable architecture is a three-layer split, and getting the boundaries right is what makes a model maintainable.' },
+          { t: 'table', head: ['Layer', 'Holds', 'Never holds', 'Example at Vantage'], rows: [
+            ['Profile', 'The irreducible baseline every user needs; typically Tab and object visibility', 'Any job-specific access', 'Agentforce Agent profile: read Account, Contact, Member__c; no clinical objects'],
+            ['Permission set', 'One coherent capability or job function', 'Access needed to negate a peer capability', 'Vantage_Claims_Adjuster: Edit on Claim__c, Read on Member__c'],
+            ['Permission set group', 'A set of capabilities that must apply, or fail, together — especially where one must exclude another', 'Standalone capabilities that are useful on their own', 'Vantage_Reviewer: reviewer access ∩ no underwriting access']
+          ]},
+          { t: 'callout', kind: 'warn', x: 'The profile layer is where most orgs fail the test. If profiles carry job-specific permissions — because someone clicked "give this user what they need" in Setup — then permission sets become decoration and every future change is a per-profile exercise. The test is simple: could you delete all profiles except one and assign everyone to that one without breaking anything? If not, the baseline is not a baseline.' },
+          { t: 'h', x: 'The exclusion pattern, concretely' },
+          { t: 'p', x: 'Suppose underwriters need broad Member__c access but must not see the consent evidence, and reviewers need consent access but must not see the underwriting notes field. Neither should pollute the other. The group is the container that makes both statements true at once: include the broad-access set, include the narrow-scope set, and let the intersection remove what each must not have.' },
+          { t: 'p', x: 'The cost of this pattern is coupling. Everything in the group is assigned and removed together, so a group is the right container only when the capabilities genuinely travel together. Wrapping unrelated sets in a group "for tidiness" is a mistake that shows up the first time someone needs one of them without the other.' }
+        ]
+      },
+      {
+        title: 'What PSGs do not solve',
+        mins: 8,
+        blocks: [
+          { t: 'p', x: 'Four things a permission set group is often expected to do and cannot.' },
+          { t: 'table', head: ['Expected', 'Reality', 'Use instead'], rows: [
+            ['It manages object permissions dynamically per user', 'A PSG is assigned as a unit; it is not conditional', 'Permission set assignment rules, based on attributes such as role'],
+            ['It manages record-level access', 'PSGs carry no sharing rules, records or fields', 'Sharing rules, teams, Apex'],
+            ['It replaces profiles', 'It does not; profiles still supply the baseline', 'A minimal profile plus PSGs'],
+            ['It reduces licence usage', 'PSGs have no licence effect', 'Licence management, user provisioning']
+          ]},
+          { t: 'h', x: 'Dynamic assignment, and how it composes with PSGs' },
+          { t: 'p', x: 'Permission set assignment rules assign permission sets to users automatically, based on attributes — most usefully role, but also profile, territory or a custom attribute. Combined with PSGs, this is how a model becomes genuinely dynamic without a single Apex class.' },
+          { t: 'callout', kind: 'tip', x: 'The powerful combination, and the one worth remembering: PSG for what a group must exclude, plus a permission set assignment rule on role for who gets the group. At Vantage, a rule assigning Vantage_Underwriter to users holding the Underwriter role means a new hire with that role picks up the right access at creation, with no admin action.' },
+          { t: 'p', x: 'The trap in dynamic assignment is that it makes effective access harder to see. An admin looking at a user sees assigned permission sets; they may not know that an assignment rule would add three more next time the user’s role changes. Document the rules alongside the sets, and be able to answer "what will this user have if their role changes to X" — which is an examination question as much as an operational one.' },
+          { t: 'h', x: 'Preview and session behaviour' },
+          { t: 'p', x: 'Permission set changes are applied at next login or with a session refresh, and users with many permission sets can hit a session-related limit that forces re-authentication. Groups make this more visible because a single group change can add several sets at once. Plan the communication, not just the deployment.' }
+        ]
+      },
+      {
+        title: 'Impact and consequences of PSG changes',
+        mins: 7,
+        blocks: [
+          { t: 'p', x: 'Three consequences deserve explicit treatment, because two of them surprise architects.' },
+          { t: 'h', x: 'Permission changes do not trigger recalculation — but they do change access' },
+          { t: 'p', x: 'Assigning or removing a permission set changes what a user can reach without any sharing recalculation. This is fast, which is good, and it means a permission change is immediately visible — including immediately visible as an incident if you remove access a user was relying on without telling them.' },
+          { t: 'table', head: ['Change', 'Recalculation?', 'Immediate impact', 'Risk'], rows: [
+            ['Permission set added', 'No', 'Next session', 'Usually additive, low'],
+            ['Permission set removed', 'No', 'Next session', 'A workflow that depended on it breaks at next login'],
+            ['PSG assigned', 'No', 'Next session, possibly re-authentication', 'Several capabilities change together, so blast radius is harder to predict'],
+            ['PSG with View All assigned', 'No', 'Next session', 'Effectively removes sharing as a boundary for that user'],
+            ['Assignment rule matches a new user', 'No', 'At user creation', 'Easy to miss entirely in review'],
+            ['Sharing rule or OWD change', 'Yes', 'After recalculation', 'The slow, expensive one — Phase 15']
+          ]},
+          { t: 'callout', kind: 'warn', x: 'The row to note is PSG assignment with View All. Assigning a group containing a View All permission set does not trigger a recalculation, and instantly removes sharing rules as the effective boundary for every user in it. Fast is not the same as safe, and a recalculation-free change that opens access org-wide deserves the same change control as an OWD change.' },
+          { t: 'p', x: 'Licence counting is unaffected by PSGs. A PSG does not reduce the number of licences a user needs, and a user requiring a high-volume or industry licence still requires one regardless of how their access is packaged.' }
+        ]
+      },
+      {
+        title: 'Migrating from the sprawl model',
+        mins: 7,
+        blocks: [
+          { t: 'p', x: 'Most orgs arriving at PSGs are migrating from a set sprawl or a profile-heavy model. The migration is mostly a re-attribution exercise.' },
+          { t: 'num', items: [
+            'Inventory: for every permission set, name the job function it serves. Unattributed sets are candidates for deletion.',
+            'Baseline: confirm the profiles are minimal. If they are not, this is the bigger job — do it first, because groups cannot subtract from a profile that grants everything.',
+            'Group: identify the small number of places where capabilities must exclude each other. Those, and only those, become groups.',
+            'Automate: add assignment rules on role for the sets that map cleanly to job functions.',
+            'Verify: compare effective access before and after for one user per job function, field by field, not record by record.'
+          ]},
+          { t: 'callout', kind: 'tip', x: 'Step five is where migrations fail. Comparing access record by record is infeasible; comparing *effective permissions* — object CRUD and field read/edit per object — is a tractable diff and catches the real errors. Export the permission summaries before and after and diff them.' },
+          { t: 'p', x: 'And resist the temptation to wrap everything in one big group. The benefit of groups comes precisely from their being few and specific. A single group containing twenty sets is a permission set with a slower interface and a subtractive surprise waiting inside it.' },
+          {
+            t: 'ex',
+            id: '11.1',
+            title: 'Build the exclusion group and prove the subtraction',
+            obj: 'Construct a permission set group where intersection removes access, and demonstrate empirically that a plain permission set could not.',
+            stars: 3,
+            steps: [
+              'Create two permission sets: one granting broad Member__c read including SSN_Last4__c, one granting Member__c read without that field.',
+              'Assign both to a test user directly, without a group. Record the effective access on the field.',
+              'Put the same two sets into a permission set group and assign only the group. Record the effective access now.',
+              'Confirm the field is not readable after grouping, and confirm this is visible in a direct API query as well as the UI.',
+              'Write one sentence explaining why the second set worked in a group but did not work on its own.'
+            ],
+            verify: 'A demonstrated difference between the ungrouped and grouped cases, confirmed via API, with the intersection rule stated correctly in one sentence.'
+          },
+          {
+            t: 'ex',
+            id: '11.2',
+            title: 'Design the three-layer model for Vantage',
+            obj: 'Redistribute a real permission set inventory across profile, permission set and PSG, with a written justification for each placement.',
+            stars: 3,
+            steps: [
+              'Take the inventory from exercise 10.1 and list every object and field permission granted.',
+              'For each, decide the layer: baseline profile, named permission set, or group member. Write the reason.',
+              'Identify the two places where intersection is genuinely required and build those groups.',
+              'Add permission set assignment rules on role for the sets that map to job functions.',
+              'Run the "delete all profiles but one" test and report what breaks. That list is your remaining baseline problem.'
+            ],
+            verify: 'Every permission attributed to a layer with a reason, two working exclusion groups, assignment rules in place, and an honest list of what still fails the baseline test.'
+          },
+          {
+            t: 'ex',
+            id: '11.3',
+            title: 'Predict effective access under four scenarios',
+            obj: 'Answer the operational questions a PSG model must be able to answer, including the ones about future changes.',
+            stars: 3,
+            steps: [
+              'For four named users, state their complete effective permissions today: object CRUD and field read/edit.',
+              'For each, state what changes if their role changes to X — which assignment rules fire, which groups follow.',
+              'State what happens to their sessions, and whether re-authentication is needed.',
+              'For one user assigned a group containing View All, state exactly which sharing rules are no longer their boundary.',
+              'Write the three questions an auditor would ask about this model, and the answers you would give.'
+            ],
+            verify: 'Four accurate current-state descriptions, four accurate change predictions, an explicit re-authentication answer, a named case where sharing stops being the boundary, and three auditor questions with answers.'
+          },
+          { t: 'selfcheck', q: 'A permission set group is supposed to intersect its sets. A user is also in a second group that re-grants what the first removed. What is the result?', a: 'The removal does not survive. Intersection applies only within a group; across groups the results union. So the second group’s grant restores the access the first group removed. If you need the exclusion to be absolute, the negated capability cannot be re-granted anywhere else in the user’s assignment — which is a real modelling constraint, and the reason exclusion groups need to be designed with the whole assignment set in view rather than locally.' }
+        ]
+      }
+    ],
+    quiz: {
+      title: 'Phase 11 Quiz · Permission Set Groups',
+      mins: 6,
+      questions: [
+        {
+          q: 'How are permissions combined within a permission set group?',
+          opts: ['Union', 'Intersection', 'Most permissive wins', 'Profile takes precedence'],
+          a: 1,
+          why: 'Intersection — the group is the only subtractive permission mechanism. Across multiple groups, the results union again.'
+        },
+        {
+          q: 'A user is in two PSGs; one grants Edit on Member__c, the other contains a set granting no Edit. Effective access?',
+          opts: ['No Edit — subtraction applies across groups', 'Edit — cross-group combination is a union', 'Edit only if both groups agree', 'Depends on the profile'],
+          a: 1,
+          why: 'Only sets inside the same group intersect. A plain permission set cannot subtract, so the second group contributes nothing to Edit.'
+        },
+        {
+          q: 'What is the right three-layer split?',
+          opts: ['Profile for job-specific access, permission sets for baseline', 'Profile as minimal baseline, one permission set per job function, PSG where capabilities must exclude each other', 'PSGs for everything, profiles unused', 'Permission sets for baseline, profiles for exclusions'],
+          a: 1,
+          why: 'Profiles hold the irreducible baseline, permission sets hold coherent capabilities, and groups hold combinations that must apply or fail together.'
+        },
+        {
+          q: 'A profile grants broad access to most users. What is the consequence for PSGs?',
+          opts: ['None', 'Groups cannot subtract from a profile that grants everything, so the baseline must be fixed first', 'PSGs override profiles', 'Groups automatically restrict profiles'],
+          a: 1,
+          why: 'A group intersects only its own member sets. Profile-granted access remains. Fix the baseline before designing groups.'
+        },
+        {
+          q: 'Does assigning a permission set group trigger a sharing recalculation?',
+          opts: ['Yes', 'No — permission changes do not recalculate, though access changes immediately at next session'],
+          a: 1,
+          why: 'No recalculation. That makes it fast, and also means a group containing View All instantly removes sharing as the effective boundary for every user in it.'
+        },
+        {
+          q: 'What does a permission set group NOT do?',
+          opts: ['Assign several permission sets as a unit', 'Subtract access between its member sets', 'Carry sharing rules or record-level access', 'Group capabilities that must travel together'],
+          a: 2,
+          why: 'PSGs carry no sharing rules, records or fields. They are purely a packaging and assignment mechanism over permissions.'
+        },
+        {
+          q: 'How do you make a PSG model genuinely dynamic without Apex?',
+          opts: ['Add more permission sets to each user manually', 'Use permission set assignment rules based on role or another attribute', 'Add a second group to override', 'Change the profile'],
+          a: 1,
+          why: 'Assignment rules attach sets to users automatically based on attributes. Combined with PSGs for exclusions, this replaces ad-hoc manual assignment entirely.'
+        },
+        {
+          q: 'What is the main risk of dynamic permission set assignment?',
+          opts: ['It costs licences', 'Effective access becomes harder to see, since an admin may not know what a future role change will add', 'It triggers recalculation', 'It requires a PSG for each rule'],
+          a: 1,
+          why: 'You must be able to answer "what will this user have if their role changes". Document assignment rules alongside sets, and treat a role change as an access change.'
+        },
+        {
+          q: 'A permission set is removed from a user. When does it take effect?',
+          opts: ['Immediately', 'At next session, and any workflow relying on it breaks then', 'After a recalculation', 'Immediately if it granted no View All'],
+          a: 1,
+          why: 'Permission changes apply at next session. Communicate removals, because the breakage lands on the user at login rather than on your schedule.'
+        },
+        {
+          q: 'True or false: permission set groups affect licence requirements.',
+          opts: ['True', 'False — PSGs are packaging only; a user needing a high-volume licence still needs one'],
+          a: 1,
+          why: 'False. Licensing is governed by user attributes and features used, not by how permissions are packaged.'
+        },
+        {
+          q: 'What is the danger of wrapping twenty unrelated permission sets in one group "for tidiness"?',
+          opts: ['None, it reduces sprawl', 'Everything is assigned and removed together, so one need cannot be met without the others — and hidden subtractive behaviour sits inside', 'It triggers recalculation', 'Groups cannot exceed ten sets'],
+          a: 1,
+          why: 'Group membership couples capabilities and hides an intersection. The benefit of groups comes precisely from their being few and specific.'
+        },
+        {
+          q: 'When migrating to PSGs, how should you verify the migration?',
+          opts: ['Compare record visibility for sample users', 'Compare effective permissions — object CRUD and field read/edit — before and after, and diff them', 'Ask users whether anything broke', 'Compare permission set counts'],
+          a: 1,
+          why: 'Record-level comparison is infeasible; effective permissions are a tractable diff that catches real errors. Record counts tell you nothing about correctness.'
+        }
+      ]
+    }
+  },
+  /* ─────────────────────────── PHASE 12 ─────────────────────────── */
+  {
+    id: 'fls',
+    n: 12,
+    title: 'Field-Level Security',
+    icon: '🔬',
+    color: '#9D174D',
+    exam: 'permissions',
+    tagline: 'The only control that hides data from someone who can see the record',
+    guide: '12-Field-Level-Security.md',
+    art: [
+      { label: 'FLS matrix', href: 'docs/architecture/fls-matrix.md' },
+      { label: 'withSecurityEnforced query', href: 'scripts/soql/fls-enforced.soql' }
+    ],
+    objectives: [
+      'Explain why FLS is a security control and page layouts are not, in terms of what each actually governs',
+      'Predict how FLS affects formulas, roll-ups, reports, exports and Apex',
+      'Enforce FLS deliberately from Apex and identify where it is silently bypassed',
+      'Design field-level access for a sensitive-data org so that no single mechanism is load-bearing'
+    ],
+    lessons: [
+      {
+        title: 'What FLS actually governs',
+        mins: 8,
+        blocks: [
+          { t: 'p', x: 'FLS is a permission on a field, evaluated for the running user. It governs what that user can read and what they can write, per field, per object, per action.' },
+          { t: 'table', head: ['Field permission', 'Means', 'Typical use'], rows: [
+            ['Readable', 'The field’s value is returned to the user', 'Clinical notes visible to clinicians, hidden from brokers'],
+            ['Editable', 'The user may change the field', 'An adjustment field editable by adjusters, not by auditors'],
+            ['Required to edit / hidden on page', 'Presentation and validation, not security', 'Never relied on for sensitive data']
+          ]},
+          { t: 'callout', kind: 'warn', x: 'FLS applies everywhere the user’s data is returned, not just the record page: list views, detail pages, reports, exports, REST and SOAP APIs, Lightning components, email templates and Apex queries that do not enforce it. This breadth is exactly what makes FLS the security control and a page layout merely a presentation.' },
+          { t: 'h', x: 'The layout comparison, stated plainly' },
+          { t: 'p', x: 'A field removed from a page layout is invisible in the UI and fully readable through the API. A field marked non-readable in FLS is invisible everywhere, including a direct REST query. Only one of those is a control.' },
+          { t: 'callout', kind: 'tip', x: 'A quick way to prove it in a training or review session: hide a field from a layout, then query it via REST as that user. It returns. Then mark it non-readable in FLS and query again. It does not. That demonstration ends the layout-versus-FLS discussion permanently.' },
+          { t: 'selfcheck', q: 'You hide a sensitive field from a page layout. A week later someone reports they can read it through a report. What happened?', a: 'Layouts are not access controls, and reports honour FLS rather than layouts. If FLS allowed read, the report returns the value — the layout hid nothing. The fix is FLS, and the lesson is that a layout hiding is not a security decision and should never be recorded as one.' }
+        ]
+      },
+      {
+        title: 'Where FLS produces surprises',
+        mins: 9,
+        blocks: [
+          { t: 'p', x: 'FLS propagates further than most people expect, and the propagation is where the bugs live.' },
+          { t: 'table', head: ['Situation', 'Result', 'Why'], rows: [
+            ['Formula field references a non-readable field', 'The formula evaluates blank for that user', 'The user cannot see the inputs, so the output is withheld'],
+            ['Roll-up summary on a non-readable parent field', 'Blank for that user', 'Same principle, parent field gated'],
+            ['User lacks read on a field used in a filter', 'The filter is applied with the field treated as empty', 'Filtering on invisible data is not permitted to leak'],
+            ['Export to CSV or XLSX', 'Non-readable fields are omitted or blank', 'Export honours FLS — a genuine benefit for data minimisation'],
+            ['Report built by a system context', 'May show everything the builder can see', 'The builder’s permissions determine the report'],
+            ['Field is hidden on the record page', 'Still queryable if FLS allows', 'Layout is presentation only']
+          ]},
+          { t: 'callout', kind: 'warn', x: 'The first row is worth dwelling on. A derived field silently returning blank is often reported as "the formula is broken" when the formula is fine and FLS is working. Diagnose FLS before touching the formula — and be aware that a blank derived field is a data point about permissions, not about data.' },
+          { t: 'p', x: 'The filter row is subtle: if a user filters a report on a field they cannot read, the report treats the field as empty. So a report filtered on a sensitive field behaves differently for different users, which produces "the numbers change depending on who runs it" complaints. The fix is a report structure that does not require users to filter on fields they cannot see.' },
+          { t: 'h', x: 'Required-field validation and FLS' },
+          { t: 'p', x: 'A required field the user cannot read is a known rough edge: the user may be unable to supply a value they cannot see, which blocks the save. If a field is both required and sensitive — a national identifier, for instance — the usual resolution is to let a process populate it server-side and to relax the user-facing requirement, rather than exposing it.' }
+        ]
+      },
+      {
+        title: 'FLS in Apex: where it is silently bypassed',
+        mins: 9,
+        blocks: [
+          { t: 'p', x: 'This is examinable and it is the most important thing to know about FLS in code. By default, Apex queries and DML run without FLS enforcement.' },
+          { t: 'table', head: ['Mechanism', 'What it does', 'Status'], rows: [
+            ['WITH SECURITY_ENFORCED in SOQL', 'Filters the query to fields the user can read, and throws if the object is not FLS-secured', 'Deprecated — removal was announced with Summer ’26'],
+            ['WITH USER_MODE', 'Enforces FLS and object permissions for the running user', 'The supported mechanism, and the default direction of travel'],
+            ['System mode DML', 'Ignores FLS entirely', 'Explicit declaration required going forward'],
+            ['Schema.sObjectType.X.isAccessible() / describe calls', 'Lets code check before acting', 'Still needed — enforcement and checking are different things']
+          ]},
+          { t: 'callout', kind: 'warn', x: 'WITH SECURITY_ENFORCED is being removed. Any code relying on it must be migrated to user mode, which is both safer and easier to reason about — user mode enforces object permissions and sharing behaviour as well as FLS, so migrating usually reveals access assumptions the old code was quietly violating.' },
+          { t: 'p', x: 'The pattern to adopt: declare user mode on the class, check accessibility where the behaviour differs meaningfully, and never assume that a record coming back from a query is one the user may act on. In system mode, DML on a field the user cannot edit succeeds — and then you have a data-integrity problem that only shows up as a support ticket.' },
+          { t: 'h', x: 'The asymmetry to remember' },
+          { t: 'p', x: 'Enforcement applies to reads and writes you perform as the user. It does not retroactively protect a record you move into system mode. So a batch job that needs to write a restricted field should say so explicitly, log it, and treat it as a privileged path — not slip into it because a trigger defaulted to system mode.' },
+          { t: 'selfcheck', q: 'A Lightning component shows a blank Diagnosis_Code__c for a user who definitely has a value on the record. What is the most likely cause?', a: 'FLS. Either the user lacks read on Diagnosis_Code__c, or the field is a formula or roll-up whose source fields they cannot read, so the derived value is withheld. Check FLS on the field and on its dependencies before assuming a data problem — and note that the record is visible, so the object permissions and sharing rules are fine.' }
+        ]
+      },
+      {
+        title: 'Layering field controls',
+        mins: 8,
+        blocks: [
+          { t: 'p', x: 'For genuinely sensitive data, no single mechanism is sufficient. The design principle is that each layer fails differently, so an error in one is caught by another.' },
+          { t: 'table', head: ['Layer', 'What it protects against', 'Does not protect against'], rows: [
+            ['FLS', 'Direct query, reports, exports, UI', 'A user who should not see the record learning something from its existence'],
+            ['Record-level sharing', 'Which records a user can reach at all', 'Sensitive fields on records they legitimately reach'],
+            ['Field masking (Winter ’27)', 'A sensitive value replaced by a mask while preserving the field’s usability', 'Users who need the value legitimately'],
+            ['Shield Platform Encryption', 'Storage-level confidentiality of the value', 'A privileged user viewing it in plaintext'],
+            ['Restriction rule', 'Declaratively granted record access', 'Apex sharing, ownership, CRUD and FLS']
+          ]},
+          { t: 'callout', kind: 'tip', x: 'Field masking from Winter ’27 is the newest and most useful addition for healthcare: it lets a user keep working with a field — see that it is populated, filter on it, copy it — while the value itself is masked unless the user is entitled. That solves the classic tension between usability and confidentiality without removing the field from everyone’s permissions.' },
+          { t: 'p', x: 'The Vantage illustration. A broker needs to know a claim exists and its status, but not the diagnosis code. Three options, in increasing order of preference: give no read on Diagnosis_Code__c and let the broker work from status; use masking so the field appears but the value is hidden; or, at record level, share a summarised Claim_Summary__c with the broker and keep the clinical Claim__c internal. The third is the strongest, because it also removes the record.' }
+        ]
+      },
+      {
+        title: 'Designing FLS for a regulated org',
+        mins: 8,
+        blocks: [
+          { t: 'p', x: 'A practical method for Vantage that produces a defensible matrix rather than a pile of checkbox decisions.' },
+          { t: 'num', items: [
+            'Classify every custom field into a sensitivity tier: public, internal, confidential, restricted, and never-external.',
+            'For each tier, define the roles permitted to read it. This is a business decision, taken once, applied consistently.',
+            'Derive the matrix: role × field tier → readable, editable, or neither. Every cell must have a reason.',
+            'Apply the matrix in permission sets, and use permission set groups for the exclusions the matrix implies.',
+            'Verify empirically: for each role and each restricted field, run a query as that role and confirm the field is absent.',
+            'Handle the derived fields: for every formula and roll-up, identify which roles lose the value through dependency and confirm that is intended.'
+          ]},
+          { t: 'callout', kind: 'warn', x: 'Step six is where the design gets validated, and it is routinely skipped. A roll-up over a restricted field appears to be readable by everyone, because the roll-up field itself has no restriction — and it leaks exactly the value the parent field was restricted to protect. Restrict the derived field too, or restrict it deliberately and accept the leak with a documented reason. Either is defensible; discovering it in production is not.' },
+          { t: 'p', x: 'Finally, the review cycle. FLS drifts: a field is added with readable-by-default, a new permission set is created granting broad field access, and a derived field is created that reproduces a restricted value. Schedule a periodic diff of FLS against the sensitivity matrix, and treat any new field as sensitive until classified.' },
+          {
+            t: 'ex',
+            id: '12.1',
+            title: 'Build the field sensitivity matrix',
+            obj: 'Classify every Vantage custom field by sensitivity tier and produce a role-by-tier FLS matrix with a reason for every cell.',
+            stars: 3,
+            steps: [
+              'List every field on Member__c, Claim__c, Consent_Record__c, Access_Request__c and Provider_Network__c. Assume 15 to 20 in total.',
+              'Assign each a sensitivity tier: public, internal, confidential, restricted, never-external. Write the reason for any restricted classification.',
+              'For each of the eight internal roles, specify readable, editable, or neither for each tier.',
+              'Identify every cell where the decision is not obvious, and write the business justification.',
+              'Produce the matrix as a document a compliance officer could review without asking you anything.'
+            ],
+            verify: 'Complete field coverage, a tier for every field, a documented role-by-tier matrix, and at least three explicit justifications for non-obvious cells.'
+          },
+          {
+            t: 'ex',
+            id: '12.2',
+            title: 'Demonstrate that layout is not a control',
+            obj: 'Prove empirically the difference between hiding a field by layout and restricting it by FLS, including through a report and an export.',
+            stars: 3,
+            steps: [
+              'Take a non-sensitive field. Remove it from a page layout only. Confirm it is absent from the UI for a test user.',
+              'Query it directly as that user via the API. Record the result.',
+              'Build a report including the field and run it as the same user. Record the result.',
+              'Export the report to CSV. Record whether the field is present.',
+              'Now mark the field non-readable in FLS and repeat steps 2 to 4, recording each result and the difference.'
+            ],
+            verify: 'Four before-and-after results showing the field queryable when only layout hides it and absent once FLS applies. This exercise is the reference demonstration for the whole platform.'
+          },
+          {
+            t: 'ex',
+            id: '12.3',
+            title: 'Hunt the derived-field leak',
+            obj: 'Find every field in a schema whose value is reproduced from a restricted source, and decide deliberately whether each is a leak.',
+            stars: 3,
+            steps: [
+              'List every formula field and roll-up summary in the Vantage objects, plus any Lightning component that aggregates data client-side.',
+              'For each, identify its source fields and read their FLS tiers.',
+              'Where a derived field exposes a restricted value, classify it: unintended leak, intended with documentation, or intentionally public aggregate.',
+              'For each unintended leak, choose the fix: restrict the derived field, restrict access to the records, or redesign the field.',
+              'For each aggregate exposed in a Lightning component, note that client-side aggregation requires the source data to be readable, so FLS on the source governs it — and that is a finding, not a control.'
+            ],
+            verify: 'Every derived field accounted for, each leak classified with a decision, fixes specified, and the client-side aggregation point documented as a design constraint.'
+          },
+          { t: 'selfcheck', q: 'A report filtered on a restricted field returns different totals for different users, even though the underlying data is identical. Why?', a: 'Because a user who cannot read the field has it treated as empty when the filter is applied, so their report filters differently. FLS is not hiding the output — it is altering the filter evaluation. The fix is structural: build the report so users do not need to filter on a field they cannot read, typically by having the report apply the filter itself using run-as permissions rather than exposing it as a user-selected filter.' }
+        ]
+      }
+    ],
+    quiz: {
+      title: 'Phase 12 Quiz · Field-Level Security',
+      mins: 6,
+      questions: [
+        {
+          q: 'What does FLS govern that a page layout does not?',
+          opts: ['Which fields appear on the record page', 'Which fields the running user can read and write, across UI, reports, exports and API', 'Which records are visible', 'Which fields are required'],
+          a: 1,
+          why: 'FLS is a security control applied everywhere the user’s data is returned. Layout is presentation and is bypassed by any API query.'
+        },
+        {
+          q: 'A field is removed from a page layout. Can a user with Read on the object read it via the API?',
+          opts: ['Yes', 'No'],
+          a: 0,
+          why: 'Yes. Layout is not an access control — only FLS restricts read. Hiding by layout is a UI change with no security effect.'
+        },
+        {
+          q: 'A formula field returns blank for one user but has a value for others. Most likely cause?',
+          opts: ['The formula is broken', 'FLS on a source field — the user cannot read the inputs, so the derived value is withheld', 'OWD is Private', 'The field is not indexed'],
+          a: 1,
+          why: 'FLS propagates to formulas and roll-ups. Diagnose permissions before touching the formula; a blank derived field is a permissions signal.'
+        },
+        {
+          q: 'A user filters a report on a field they cannot read. What happens?',
+          opts: ['The filter is ignored', 'The field is treated as empty, so the report returns different results for different users', 'An error is raised', 'The field is masked but filterable'],
+          a: 1,
+          why: 'Filters are applied with invisible fields treated as empty. Fix structurally: apply the filter in the report using run-as permissions rather than exposing it as a user filter.'
+        },
+        {
+          q: 'A user lacks read on a required field. What is the usual problem and resolution?',
+          opts: ['Save fails because they cannot supply a value they cannot see — populate it server-side and relax the user-facing requirement', 'Nothing; required implies readable', 'The field must be made readable', 'The object OWD must change'],
+          a: 0,
+          why: 'Required plus non-readable blocks the save. For sensitive identifiers, a server-side process populates the value and the user-facing requirement is relaxed.'
+        },
+        {
+          q: 'Does an export to CSV respect FLS?',
+          opts: ['Yes — non-readable fields are omitted or blank', 'No — exports are admin-level operations', 'Only for XLSX', 'Only for system users'],
+          a: 0,
+          why: 'Yes. Exports honour FLS, which makes them genuinely useful for data minimisation rather than a leak vector.'
+        },
+        {
+          q: 'What is the status of WITH SECURITY_ENFORCED?',
+          opts: ['The supported mechanism', 'Deprecated and being removed, with migration to user mode required', 'Unchanged and recommended', 'Only available in sandboxes'],
+          a: 1,
+          why: 'Removal was announced with Summer ’26. Migrate to WITH USER_MODE, which also enforces object permissions — so migration reveals assumptions the old code was violating.'
+        },
+        {
+          q: 'By default, do Apex queries and DML enforce FLS?',
+          opts: ['Yes', 'No — they run without FLS enforcement unless declared otherwise'],
+          a: 1,
+          why: 'No. This is the most important fact about FLS in code, and it is why security review of an Apex codebase cannot assume FLS is applied.'
+        },
+        {
+          q: 'Which mechanism can hide a sensitive value while preserving the field’s usability?',
+          opts: ['Page layout removal', 'Field masking, available from Winter ’27', 'A validation rule', 'An approval process'],
+          a: 1,
+          why: 'Masking lets the user see that the field is populated and filter on it while the value stays hidden. That resolves the usability-versus-confidentiality tension without removing the field from everyone.'
+        },
+        {
+          q: 'A roll-up summary sits on a field with no FLS restriction, over a restricted parent field. What is the risk?',
+          opts: ['None, the roll-up is a different field', 'The roll-up reproduces the restricted value and is readable by everyone', 'The roll-up will not calculate', 'The parent field becomes readable'],
+          a: 1,
+          why: 'Derived fields leak their sources’ content unless restricted too. Restrict the derived field, restrict the records, or accept the exposure with a documented reason.'
+        },
+        {
+          q: 'True or false: aggregating data in a Lightning component can bypass FLS on the source fields.',
+          opts: ['True', 'False — client-side aggregation requires the source data to be readable, so FLS on the source governs it'],
+          a: 1,
+          why: 'False, and that is a design constraint rather than a control. Anything you aggregate client-side must first be readable by the user, which is why sensitive aggregates belong server-side with explicit filtering.'
+        },
+        {
+          q: 'Which layer protects against a user learning something from the mere existence of a record they cannot reach?',
+          opts: ['FLS', 'Record-level sharing', 'Page layout', 'Field masking'],
+          a: 1,
+          why: 'Record-level sharing. FLS hides values on records a user can already reach; it says nothing about records they cannot reach at all.'
+        }
+      ]
+    }
+  },
+  /* ─────────────────────────── PHASE 13 ─────────────────────────── */
+  {
+    id: 'sensitive',
+    n: 13,
+    title: 'Sensitive Data: Masking, Encryption & BYOL',
+    icon: '🛡️',
+    color: '#7F1D1D',
+    exam: 'permissions',
+    tagline: 'What protects data at rest, at use, and from the people you trust',
+    guide: '13-Sensitive-Data.md',
+    art: [
+      { label: 'Data protection assessment', href: 'docs/architecture/data-protection-assessment.md' },
+      { label: 'Field classification register', href: 'docs/architecture/field-classification.md' }
+    ],
+    objectives: [
+      'Distinguish data-at-rest encryption, transport encryption and in-use protection, and state what each threat model covers',
+      'Explain Shield Platform Encryption, including its key hierarchy and the distinction between deterministic and non-deterministic encryption',
+      'State what encryption does not protect against, which is the more examinable half',
+      'Apply the layered model to Vantage’s PHI and PII and produce an assessment a compliance officer can act on'
+    ],
+    lessons: [
+      {
+        title: 'Three places data lives, three threat models',
+        mins: 8,
+        blocks: [
+          { t: 'p', x: 'Security architecture for sensitive data is easiest to reason about when you separate the three states data can be in, because each needs a different control.' },
+          { t: 'table', head: ['State', 'Threat', 'Control'], rows: [
+            ['At rest', 'A stolen database backup or disk', 'Platform encryption — standard, Shield, or BYOL'],
+            ['In transit', 'Interception between systems', 'TLS, HTTPS, and Salesforce’s own transport encryption'],
+            ['In use', 'An authorised user reading what they should not see', 'FLS, masking, sharing, and — with Field Audit Trail or similar — who read what']
+          ]},
+          { t: 'callout', kind: 'warn', x: 'Encryption is an at-rest control. It does nothing about an authorised user opening a record they should not see, and nothing about a misconfigured permission set. Every candidate who claims encryption solves a confidentiality problem is answering a different question from the one being asked.' },
+          { t: 'p', x: 'That statement is the spine of this phase, and it recurs in the exam: knowing what a control does not protect against is worth more than knowing that it exists.' },
+          { t: 'selfcheck', q: 'An auditor asks whether member SSNs are protected. Which question do you answer?', a: 'All three, because the answer differs. At rest: platform encryption is always on; Shield adds customer-managed keys, and BYOL gives full key custody. In transit: TLS. In use: FLS on the field, record sharing on Member__c, masking so brokers see that it is populated, and Field Audit Trail if you must evidence who read it. Answering only the encryption question leaves the actual risk — an authorised user reading the field — unaddressed.' }
+        ]
+      },
+      {
+        title: 'Platform encryption, Shield, and the key hierarchy',
+        mins: 9,
+        blocks: [
+          { t: 'p', x: 'Three levels, and the difference is custody of the keys.' },
+          { t: 'table', head: ['Level', 'Key custody', 'What it adds'], rows: [
+            ['Platform encryption', 'Salesforce', 'Encryption at rest with Salesforce-managed keys. Always on, no configuration'],
+            ['Shield Platform Encryption', 'You, via a key management service', 'Customer-managed keys, key rotation on your schedule, your key management system as the authority'],
+            ['Bring Your Own Key / Tenant Shield', 'You, exclusively', 'Full custody: you can revoke, you can prove the key lifecycle, Salesforce never holds it']
+          ]},
+          { t: 'callout', kind: 'tip', x: 'The distinction that matters for a compliance conversation is revocation. With a customer-managed key, revoking the key renders the data inaccessible — an extraordinary capability when a key is suspected compromised. With platform encryption, Salesforce’s custody means you cannot revoke, because you do not hold the key.' },
+          { t: 'h', x: 'Deterministic versus non-deterministic' },
+          { t: 'p', x: 'This distinction decides what you can do with an encrypted field afterwards, and it is the part that catches people out.' },
+          { t: 'table', head: ['', 'Deterministic', 'Non-deterministic'], rows: [
+            ['Same plaintext produces', 'The same ciphertext', 'Different ciphertext each time'],
+            ['Can you filter, sort or group on it', 'Yes', 'No — not equality, not range, not sort'],
+            ['Can you use it in a SOQL WHERE clause', 'Yes, equality', 'No'],
+            ['Can you use it in a formula or a report filter', 'Yes', 'No'],
+            ['Suitable for', 'SSN, national ID, member number — anything you need to look up', 'Free-text clinical notes, narrative content where you never need to search']
+          ]},
+          { t: 'callout', kind: 'warn', x: 'Choose non-deterministic for anything free-text, because deterministic encryption on narrative text is both unnecessary and much harder to operate. Choose deterministic only where a query is genuinely required — and remember that a deterministic encrypted field is searchable by anyone who can query it, so the FLS and sharing controls still apply on top.' },
+          { t: 'p', x: 'One more operational fact worth knowing: encrypted fields cannot be used in certain places regardless of mode — picklist filter conditions in some contexts, and some report filter types. Verify before designing a field you will need to filter on.' }
+        ]
+      },
+      {
+        title: 'What encryption does not do',
+        mins: 8,
+        blocks: [
+          { t: 'p', x: 'This lesson is the examinable half of the topic, and it is the one to memorise precisely.' },
+          { t: 'table', head: ['Expectation', 'Reality'], rows: [
+            ['It stops an authorised user reading the value', 'No. It protects storage. A user with Read on the field sees it in plaintext'],
+            ['It hides the field from reports', 'No. FLS governs that'],
+            ['It replaces record-level sharing', 'No. Sharing is a separate layer'],
+            ['It prevents a privileged admin from reading it', 'Not by default. A system administrator can, in plaintext, where encryption permits'],
+            ['It protects data in use in memory', 'No. It is decrypted in memory during processing'],
+            ['It stops a user who can query the field from searching it', 'Only if non-deterministic — and then you lose the ability to search it yourself'],
+            ['It is a substitute for a data classification exercise', 'No. You cannot encrypt a field you have not decided is sensitive']
+          ]},
+          { t: 'callout', kind: 'warn', x: 'The last row is a genuine architectural point, not a quip. Encryption decisions follow classification. Classify first — public, internal, confidential, restricted — then decide per field whether the value must be queryable, and therefore whether deterministic encryption is even appropriate.' },
+          { t: 'p', x: 'And the honest summary for a compliance conversation: encryption raises the cost of a storage-level compromise from near zero to very high. It does not change who inside the system can read the value. Both facts are true and both belong in the assessment.' }
+        ]
+      },
+      {
+        title: 'Layering the model at Vantage',
+        mins: 9,
+        blocks: [
+          { t: 'p', x: 'Apply the layers to actual fields and the design decisions become concrete.' },
+          { t: 'table', head: ['Field', 'Tier', 'Encryption', 'Access control', 'Why'], rows: [
+            ['Member__c.SSN_Last4__c', 'Restricted', 'Shield, deterministic — a lookup by last four plus DOB is a real workflow', 'FLS withheld from brokers; masking for anyone who needs to know it is populated', 'Queryable but tightly scoped'],
+            ['Member__c.Clinical_Summary__c', 'Confidential', 'Shield, non-deterministic', 'FLS: clinicians and care coordinators only', 'Never needs to be searched'],
+            ['Claim__c.Diagnosis_Code__c', 'Confidential', 'Shield, deterministic — reporting requires it', 'FLS plus record sharing; brokers get a summary object instead', 'Aggregated reporting needs the query'],
+            ['Consent_Record__c.Evidence_Hash__c', 'Restricted', 'Platform encryption is sufficient', 'Read-only for auditors, never editable except by the integration', 'Integrity field, not confidential content'],
+            ['Consent_Record__c.Evidence_Text__c', 'Restricted PHI', 'Shield, non-deterministic', 'FLS plus sharing; never external', 'Free-text clinical evidence'],
+            ['Provider_Network__c.NPI__c', 'Confidential', 'Platform encryption', 'Readable to Provider Operations, withheld elsewhere', 'Identifier, not narrative']
+          ]},
+          { t: 'callout', kind: 'tip', x: 'The diagnosis code row is the instructive one. Reporting genuinely requires a query on Diagnosis_Code__c, so deterministic encryption is justified — but deterministic means anyone who can query it can search it, which is precisely why the broker answer is a different object rather than a field restriction. When the analytics requirement and the confidentiality requirement conflict, change the object model, not the encryption.' },
+          { t: 'p', x: 'Two cross-cutting controls that belong in any PHI model: data retention and minimisation, which prevent the problem rather than controlling it, and access logging, which is what you rely on during an investigation. Field Audit Trail is the Salesforce mechanism for evidencing field reads on sensitive fields — expensive, but it is the answer to "prove nobody read the SSN".' },
+          { t: 'selfcheck', q: 'You encrypt Member__c.SSN_Last4__c with Shield in deterministic mode. What risk remains?', a: 'Two, both of them significant. Anyone with Read on the field can both see and search the value — deterministic encryption makes it queryable, so FLS and record sharing are the only controls on it. And encryption does not evidence access: without Field Audit Trail you cannot demonstrate who read the value. Encryption raises the cost of a storage compromise; it does not address an authorised reader.' }
+        ]
+      },
+      {
+        title: 'Release changes to sensitive data',
+        mins: 7,
+        blocks: [
+          { t: 'p', x: 'Two recent developments change what is available for sensitive data, and both are worth holding alongside the older material.' },
+          { t: 'h', x: 'Field masking, from Winter ’27' },
+          { t: 'list', items: [
+            'Masks the value of a sensitive field for users who are not entitled to it, while leaving the field present and usable.',
+            'Solves the classic conflict between usability and confidentiality: a user can see that the field is populated, and filter on it, without reading the value.',
+            'An entitlement mechanism rather than a permission removal, which means it composes with FLS rather than replacing it.',
+            'Ask specifically whether masking applies to API access as well as the UI. A control that protects only the UI is a layout in disguise.'
+          ]},
+          { t: 'h', x: 'Guest field-level access control for Experience Cloud' },
+          { t: 'p', x: 'Winter ’27 also brings enforced field-level access control for guest users in Experience Cloud. This matters because the guest user holds elevated permissions for every external user, so field scoping on guest-accessed objects was previously a blunt instrument. Enforced FLS lets the field boundary be applied to external traffic rather than relying on the permission set alone.' },
+          { t: 'callout', kind: 'tip', x: 'Both changes point the same way, and it is worth naming the direction in a design document: the platform is progressively moving enforcement from configuration into the runtime, so that the correct configuration is the enforced behaviour rather than the intended one. For an architect, that means declarative mechanisms and enforced field access are becoming safer assumptions, and ad-hoc Apex and permission-set workarounds are becoming the residual risk.' },
+          { t: 'p', x: 'Also keep the identity and compliance deadlines in view when writing any of this down: Enhanced External User Identity (external identities) and the HIPAA BAA and other regulatory attestations are prerequisites that shape which features you can legitimately offer externally, not just how you configure them.' }
+        ]
+      },
+      {
+        title: 'Producing the assessment',
+        mins: 7,
+        blocks: [
+          { t: 'p', x: 'The deliverable for this phase is a document, and the document is the skill. A layered model with no assessment is a diagram.' },
+          { t: 'table', head: ['Section', 'Content', 'Who reads it'], rows: [
+            ['Classification', 'Field-by-field tier with a reason for each restricted field', 'Compliance, data owners'],
+            ['Encryption decision', 'Mode, justification for determinism, key custody level', 'Security, compliance'],
+            ['Access design', 'FLS, sharing, masking per field, with the layer that enforces each', 'Security, architects'],
+            ['Residual risk', 'What the model does not protect against, stated plainly', 'Compliance, executives'],
+            ['Monitoring', 'Field Audit Trail scope, alerting, review cadence', 'Security operations'],
+            ['Evidence', 'How each control is demonstrated during an audit', 'Auditors']
+          ]},
+          { t: 'callout', kind: 'warn', x: 'The "residual risk" section is the one that earns trust, and the one candidates omit. Stating that encryption does not prevent an authorised user reading a field, that your model relies on FLS being correctly configured, and that access logging has a defined scope, is what distinguishes an assessment from a compliance exercise.' },
+          {
+            t: 'ex',
+            id: '13.1',
+            title: 'Decide encryption and access for every sensitive field',
+            obj: 'For each Vantage sensitive field, choose encryption mode and access controls, and justify both against the threat model.',
+            stars: 3,
+            steps: [
+              'Take the six fields from the lesson table plus any others you classify as restricted.',
+              'For each, state the threat model first: at rest, in transit, or in use. Name which threat you are addressing.',
+              'Choose an encryption level and mode. Justify determinism specifically: does a query need to work, and who would be performing it?',
+              'Specify the access controls: FLS, sharing, masking, and the layer that enforces each.',
+              'Write one residual-risk sentence per field — what this combination still does not protect against.'
+            ],
+            verify: 'A field-by-field decision with threat model stated first, determinism justified case by case, access layers specified, and a residual-risk sentence for every field.'
+          },
+          {
+            t: 'ex',
+            id: '13.2',
+            title: 'Write the residual-risk section honestly',
+            obj: 'Produce the section of the assessment that a compliance officer actually reads, without overstating any control.',
+            stars: 3,
+            steps: [
+              'List every control in your Vantage model: platform encryption, Shield if used, FLS, sharing, masking, restriction rules, Apex grants, manual shares.',
+              'For each, state precisely what it protects against and what it does not.',
+              'Identify the three highest residual risks and rate them by likelihood and impact.',
+              'For each, name a mitigation or an accepted-risk decision with an owner.',
+              'Write the paragraph explaining what the model relies on being correctly configured, and how you would detect it being wrong.'
+            ],
+            verify: 'Three rated residual risks, each with an owner and a mitigation or a documented acceptance, plus a stated detection approach for configuration error.'
+          },
+          {
+            t: 'ex',
+            id: '13.3',
+            title: 'Design the access-evidence model',
+            obj: 'Decide how you would evidence who read sensitive fields, and scope it in a way an auditor would accept.',
+            stars: 3,
+            steps: [
+              'Decide which fields require read auditing. Not all fields need it — justify the selection.',
+              'For each, state the mechanism: Field Audit Trail, or an alternative if the volume makes it impractical.',
+              'Estimate the storage and API cost of the audit data volume at Vantage record counts, and state whether it is proportionate.',
+              'Define the alerting: what pattern of reads constitutes an incident.',
+              'Write how you would answer "prove nobody read SSN_Last4__c in March" with the model you have chosen.'
+            ],
+            verify: 'A justified field selection, a cost estimate at realistic volume, defined alert patterns, and a written answer to the auditor’s question that names the mechanism precisely.'
+          },
+          { t: 'selfcheck', q: 'A security team wants to encrypt Member__c.Clinical_Summary__c deterministically "so we can search it". What would you say?', a: 'Push back, with reasons. Deterministic mode on free-text clinical narrative is unnecessary — you can leave it non-deterministic, which is stronger cryptographically for that content — and it only matters if a genuine search is required. If someone does need to search narrative text, that is a signal to extract the searchable concept into its own field rather than to weaken the encryption mode of a whole narrative field. Ask what search is actually needed; the answer is usually a code, a category or a date, not the narrative itself.' }
+        ]
+      }
+    ],
+    quiz: {
+      title: 'Phase 13 Quiz · Masking, Encryption & BYOL',
+      mins: 7,
+      questions: [
+        {
+          q: 'Platform encryption protects data in which state?',
+          opts: ['At rest only', 'In transit only', 'In use only', 'All three states'],
+          a: 0,
+          why: 'At rest only. Transport encryption covers in transit, and FLS, masking and sharing cover in use. Naming the state is the first step in answering an auditor.'
+        },
+        {
+          q: 'Which statement about encryption and authorised users is correct?',
+          opts: ['Encryption prevents an authorised user from reading a field', 'Encryption is an at-rest control; an authorised user with Read still sees the value', 'Encryption replaces record-level sharing', 'Encryption hides the field from reports'],
+          a: 1,
+          why: 'It raises the cost of a storage compromise and changes nothing about who inside the system can read the value.'
+        },
+        {
+          q: 'What is the practical advantage of a customer-managed key over platform encryption?',
+          opts: ['Faster queries', 'Revocation — you can render the data inaccessible by revoking the key', 'Automatic FLS', 'Free storage'],
+          a: 1,
+          why: 'Revocation is the distinctive capability. With platform encryption you do not hold the key, so you cannot revoke.'
+        },
+        {
+          q: 'Which field is the better candidate for non-deterministic encryption?',
+          opts: ['SSN, looked up frequently', 'National member number used in queries', 'Free-text clinical notes that are never searched', 'Diagnosis code used in reporting'],
+          a: 2,
+          why: 'Non-deterministic suits free-text content you never need to query, and is cryptographically stronger for it. The others require search, which needs determinism.'
+        },
+        {
+          q: 'True or false: a deterministic encrypted field can be used in a SOQL WHERE clause with equality.',
+          opts: ['True', 'False — only non-deterministic fields support that, and non-deterministic cannot be filtered'],
+          a: 1,
+          why: 'It is the other way round. Deterministic supports equality filters and sorting; non-deterministic supports neither.'
+        },
+        {
+          q: 'Why is deterministic encryption on clinical narrative a bad choice?',
+          opts: ['It is more expensive', 'Narrative text never needs searching, and deterministic mode is weaker for it — extract the searchable concept into its own field instead', 'It prevents FLS from working', 'It cannot be used with Shield'],
+          a: 1,
+          why: 'The requirement is usually a code, a category or a date. Model that as a separate field rather than weakening the encryption mode of the narrative.'
+        },
+        {
+          q: 'What does field masking do that FLS does not?',
+          opts: ['Removes the field entirely', 'Leaves the field present and usable while hiding the value from unentitled users', 'Encrypts the value at rest', 'Grants access to the field'],
+          a: 1,
+          why: 'Masking preserves usability — the user can see the field is populated and filter on it — which FLS cannot do. It is an entitlement, so it composes with FLS.'
+        },
+        {
+          q: 'What must you check before relying on field masking as a security control?',
+          opts: ['Whether it is available in your edition', 'Whether it applies to API access as well as the UI', 'Whether it works in sandboxes', 'Whether it needs Shield'],
+          a: 1,
+          why: 'A control that protects only the UI is a layout in disguise. Verify enforcement on API paths.'
+        },
+        {
+          q: 'A system administrator can read an encrypted field in plaintext. Does that make the control ineffective?',
+          opts: ['Yes, it makes encryption pointless', 'No — encryption raises the cost of a storage compromise; privileged access in use is controlled by other layers and evidenced by access logging', 'Yes, unless BYOL is used', 'No, but only in sandboxes'],
+          a: 1,
+          why: 'Encryption is an at-rest control by design. The in-use risk is addressed by FLS, sharing and audit logging — and stated as residual risk.'
+        },
+        {
+          q: 'What must happen before you can decide how to encrypt a field?',
+          opts: ['Choose the encryption level', 'Classify the field’s sensitivity', 'Enable Shield', 'Configure Field Audit Trail'],
+          a: 1,
+          why: 'You cannot encrypt a field you have not decided is sensitive, and you cannot choose determinism without knowing whether a query is required.'
+        },
+        {
+          q: 'What is the answer to "prove nobody read SSN_Last4__c in March"?',
+          opts: ['Rely on FLS configuration', 'Rely on encryption mode', 'Field-level read auditing such as Field Audit Trail, scoped to that field', 'Check the sharing rules'],
+          a: 2,
+          why: 'Only read auditing evidences access. FLS and encryption are preventive controls; neither produces evidence of what was read.'
+        },
+        {
+          q: 'Why does a broker-facing requirement often justify a separate summary object rather than a field restriction?',
+          opts: ['Summary objects are always more secure', 'A broker needs record-level boundary — they should see a claim exists and its status, not the clinical record — and field restrictions alone cannot remove the record', 'Because FLS cannot be applied to custom objects', 'Because encryption requires a separate object'],
+          a: 1,
+          why: 'When the analytics requirement and the confidentiality requirement conflict, change the object model. Field-level controls restrict values; they do not remove the record from the query.'
+        }
+      ]
+    }
+  },
+  /* ─────────────────────────── PHASE 14 ─────────────────────────── */
+  {
+    id: 'usermode',
+    n: 14,
+    title: 'User Mode & Enforcement',
+    icon: '🛡️',
+    color: '#1E40AF',
+    exam: 'implications',
+    tagline: 'Where enforcement moves from the configuration to the runtime',
+    guide: '14-User-Mode-Enforcement.md',
+    art: [
+      { label: 'Enforcement decision matrix', href: 'docs/architecture/enforcement-matrix.md' },
+      { label: 'User-mode Apex class', href: 'force-app/main/default/classes/ClaimAccessService.cls' }
+    ],
+    objectives: [
+      'State precisely what user mode and system mode each enforce, and where the boundary between them now sits',
+      'Explain the Summer ’26 default change and what it does and does not alter in an existing codebase',
+      'Audit a codebase for silent privilege escalation and name the classes that must declare an explicit mode',
+      'Justify system mode in writing when a case genuinely requires it'
+    ],
+    lessons: [
+      {
+        title: 'The two modes, defined by what they enforce',
+        mins: 8,
+        blocks: [
+          { t: 'p', x: 'Apex executes in one of two modes. The mode determines whether the code is subject to the running user’s permissions.' },
+          { t: 'table', head: ['', 'User mode', 'System mode'], rows: [
+            ['Object permissions', 'Enforced — Create/Read/Edit/Delete are checked', 'Bypassed'],
+            ['Field-level security', 'Enforced — non-readable fields are withheld', 'Bypassed'],
+            ['Record-level sharing', 'Enforced — queries and DML respect it', 'Bypassed, with View All and Modify All data available'],
+            ['OWD', 'Enforced', 'Bypassed'],
+            ['Restriction rules', 'Enforced', 'Bypassed'],
+            ['Apex managed sharing', 'Applies', 'Applies'],
+            ['Purpose', 'Code that acts on behalf of a user', 'Code that acts on behalf of the system']
+          ]},
+          { t: 'callout', kind: 'warn', x: 'Read the Apex managed sharing row carefully. Share rows are data, and data is visible to any code that queries it — in both modes. So a grant created by your Apex is readable by other Apex, and a class running in system mode can read your share table directly. System mode does not hide sharing rows from your own code; it removes the platform’s enforcement of sharing around it.' },
+          { t: 'p', x: 'The rule of thumb that resolves most cases: if a human is waiting for the result, it is user mode. If a system process, integration or scheduled job is waiting, it is system mode — and that is a privileged position that must be justified.' },
+          { t: 'selfcheck', q: 'A trigger on Member__c updates a denormalised field on Account. Which mode, and why?', a: 'User mode, unless there is a specific reason otherwise. The field update is on a record the user can see and is part of the operation they initiated, so enforcing their permissions is consistent. If the update fails for a user lacking Account edit rights, that failure is information: either the user should not be able to trigger it, or the automation needs to be privileged — and either way it should be a decision rather than a surprise discovered in production.' }
+        ]
+      },
+      {
+        title: 'The Summer ’26 change, and what it did not do',
+        mins: 9,
+        blocks: [
+          { t: 'p', x: 'Starting with API 67.0, Apex runs in user mode by default. It is one of the most consequential changes to Apex security behaviour in years, and it is easy to overstate.' },
+          { t: 'table', head: ['What changed', 'Detail'], rows: [
+            ['New default for Apex', 'User mode, unless the code declares otherwise'],
+            ['Existing explicit declarations', 'Preserved — a class declaring without sharing stays without sharing'],
+            ['Triggers', 'Still system mode by default; declare the mode on the trigger to get user-mode behaviour'],
+            ['Flows', 'System mode by default, including in user- and system-mode flows'],
+            ['The direction of travel', 'Narrowing what Apex can bypass, progressively']
+          ]},
+          { t: 'callout', kind: 'tip', x: 'The practical effect on an existing org is smaller than the headline and the long-term effect is larger. Existing classes keep their behaviour, so nothing breaks on upgrade. But every class you touch from now on inherits a safer default, which means the codebase’s security posture improves only as code is modified — and it will not improve on its own. The audit below is what closes the gap.' },
+          { t: 'h', x: 'Why flows are worth understanding separately' },
+          { t: 'p', x: 'Flows run in system mode by default, including those started by a user-mode process. That means a user can trigger an automation that performs actions they could not perform themselves — which is powerful, correct in many cases, and the single most common design decision to get wrong. Every automation that elevates privilege should be understood as a deliberate elevation, and the trigger criteria should reflect that.' },
+          { t: 'selfcheck', q: 'An org upgrades to Summer ’26 and nothing changed. Is the change working?', a: 'Yes, and this is expected. Classes that declared a sharing keyword keep their declared behaviour, so the default applies only to code that declared nothing. The change protects new and undeclared code. It does not retroactively secure a codebase, which is exactly why an audit of undeclared classes is the first task.' }
+        ]
+      },
+      {
+        title: 'Auditing a codebase for silent escalation',
+        mins: 10,
+        blocks: [
+          { t: 'p', x: 'The audit is mechanical. The list of classes running in system mode is your risk register.' },
+          { t: 'num', items: [
+            'List every Apex class and trigger. Find the ones with no explicit sharing or mode declaration — these are the undeclared set, and under API 67.0 they now run in user mode.',
+            'For each class that does declare system mode or without sharing, ask what it does with data the running user could not otherwise reach. That is the list to review, one class at a time.',
+            'Check DML targets. A system-mode class writing to a restricted field, or to an object the user cannot access, is an elevation with no user-visible signal.',
+            'Check query filters. System-mode queries without a sharing-aware filter can pull far more than the operation needs, into memory and potentially into a debug log or an exception message.',
+            'Check the escalation path: automation in a flow that runs system mode on a user’s trigger, and any Apex invoked from it.',
+            'For each genuine elevation, write the justification. If you cannot write one, it is a finding, not a design decision.'
+          ]},
+          { t: 'callout', kind: 'warn', x: 'Two specific smells to hunt for. First, a `System.debug` or an exception message containing record data in a system-mode class: it looks harmless and it writes PHI to logs. Second, a system-mode class invoked from a user-facing action where the user could have done the operation themselves — that is an unnecessary privilege with an unnecessary attack surface.' },
+          { t: 'table', head: ['Pattern', 'Risk', 'Fix'], rows: [
+            ['Trigger with no mode declared', 'Ambiguous intent; behaviour changes on upgrade', 'Declare the mode explicitly'],
+            ['System-mode class invoked by a user action', 'Unnecessary privilege', 'Move to user mode unless justified'],
+            ['Debug or exception output containing record data', 'Sensitive data in logs', 'Log identifiers only'],
+            ['Flow performing system-mode DML on user trigger', 'Privilege elevation via automation', 'Document it; restrict trigger criteria'],
+            ['without sharing for bulk processing', 'Reads records the user cannot see', 'Use Batchable with an explicit user context or a privileged service identity']
+          ]},
+          { t: 'p', x: 'One legitimate pattern worth recognising: a scheduled job or integration running as a named service identity with narrowly scoped Modify All permissions, processing large volumes with explicit filters. That is a sound design. The point is not to eliminate system mode — it is to make each instance of it deliberate, scoped and documented.' }
+        ]
+      },
+      {
+        title: 'Enforcement, and what it catches that review misses',
+        mins: 8,
+        blocks: [
+          { t: 'p', x: 'Enforced behaviour has a property that manual review does not: it catches the case nobody thought about. The current enforcement wave is built on that idea.' },
+          { t: 'table', head: ['Control', 'What it enforces', 'Problem it removes'], rows: [
+            ['User Access Policies', 'Permissions assigned by a policy rather than by assignment', 'Permission sets granted outside any change-control process'],
+            ['Profile Filtering enforcement', 'Limits which profile features are available and which are enforced as available', 'A user seeing setup and configuration they should not'],
+            ['Guest field-level access control', 'Field scoping enforced for external traffic', 'Guest user field exposure across every external site'],
+            ['Field masking enforcement', 'Masking applied at runtime rather than by convention', 'Masking that depends on a Lightning component behaving'],
+            ['User mode in Apex', 'The user’s permissions applied to code', 'Classes that quietly bypass FLS']
+          ]},
+          { t: 'callout', kind: 'tip', x: 'The unifying idea: shift the control from something an administrator configures to something the runtime applies. Configuration can be wrong and stay wrong for years; enforcement is wrong the moment it is wrong. For a security architect, moving a control from configuration to enforcement is almost always the higher-value change, even when the configuration is currently correct.' },
+          { t: 'p', x: 'The cost side is honest and worth stating in a design document: enforcement changes break code that relied on leniency. Users lose access they had. Reports fail for users who were reading fields they should not. Every enforcement change needs the same testing discipline as an OWD change, because from a user’s perspective the effect is similar.' }
+        ]
+      },
+      {
+        title: 'Justifying system mode, in writing',
+        mins: 7,
+        blocks: [
+          { t: 'p', x: 'Sometimes system mode is correct. The discipline is not avoidance but documentation.' },
+          { t: 'table', head: ['Case', 'Legitimate?', 'Required justification'], rows: [
+            ['Scheduled recalculation of roll-ups across 2.4M members', 'Yes', 'No human context; a service identity with scoped permissions'],
+            ['Data loader integration user writing to a staging object', 'Yes', 'Named integration identity, scoped to specific objects and fields'],
+            ['A trigger updating a technical field no user should ever edit', 'Usually', 'The field is system-maintained; name it and confirm no user workflow needs it'],
+            ['A batch job reading records across business units to detect duplicates', 'Yes, carefully', 'Explain why user-scoped reads would give wrong results'],
+            ['A class that writes a field the running user cannot read, for convenience', 'No', 'Convenience is not a justification; restrict the field or change the design'],
+            ['Avoiding an error message in a test', 'No', 'This is never a reason']
+          ]},
+          { t: 'p', x: 'The pattern for each justification: name the operation, name the identity it runs as, state what data it must reach that a user context could not, and state what limits its reach. Four sentences. A class that cannot be justified in four sentences is doing too much.' },
+          {
+            t: 'ex',
+            id: '14.1',
+            title: 'Audit a codebase and produce the risk register',
+            obj: 'Classify every class and trigger by declared mode, and produce a written justification or a finding for each system-mode instance.',
+            stars: 3,
+            steps: [
+              'Inventory all Apex in your org or the scenario codebase. For each, record the declared mode or "undeclared".',
+              'For each system-mode class, record what data it reads or writes beyond the running user’s reach.',
+              'For each, attempt the four-sentence justification: operation, identity, why user context fails, what limits its reach.',
+              'Mark every class that cannot be justified as a finding, with severity.',
+              'Identify any debug or exception output containing record data, and remove or redact it.',
+            ],
+            verify: 'A complete inventory, every system-mode class either justified in four sentences or recorded as a finding, and no sensitive data left in logs.'
+          },
+          {
+            t: 'ex',
+            id: '14.2',
+            title: 'Migrate to user mode and catalogue what breaks',
+            obj: 'Move a class to user mode, find every workflow that depended on the leniency, and decide each case deliberately.',
+            stars: 3,
+            steps: [
+              'Pick a system-mode class that performs user-initiated work. Note its current behaviour.',
+              'Add the user-mode declaration. Deploy to a sandbox and run the full set of tests covering its entry points.',
+              'Catalogue every failure: which workflow, which user, which record, which permission was missing.',
+              'For each failure, decide: should the user have the permission, should the operation be privileged, or is the feature wrong?',
+              'Apply the decisions, re-test, and produce a before-and-after list. Nothing should remain unexplained.'
+            ],
+            verify: 'Every failure catalogued and resolved with a stated decision. No unexplained breakage, and no permission added "to make the error go away" without a reason.'
+          },
+          {
+            t: 'ex',
+            id: '14.3',
+            title: 'Design the Vantage enforcement wave',
+            obj: 'Produce the plan for adopting User Access Policies, Profile Filtering enforcement, guest FLS and masking, with sequencing and user impact.',
+            stars: 3,
+            steps: [
+              'For each of the four enforcement mechanisms, state what it enforces and what problem it removes in your Vantage model.',
+              'Identify which changes break user workflows and how. Be specific: which users, which screens, which reports.',
+              'Sequence the wave so that the least disruptive changes land first and the Profile Filtering change, which affects everyone, lands last.',
+              'Write the test plan per change: which personas to test, which negative cases to attempt.',
+              'Write the comms plan, including what a user should do when they lose access they had become used to.'
+            ],
+            verify: 'Four mechanisms with stated problems removed, a user-impact analysis per change, a defensible sequence, and a comms plan addressing lost access directly rather than after the fact.'
+          },
+          { t: 'selfcheck', q: 'A user triggers a flow that updates a field they cannot edit themselves. Is that a bug?', a: 'No, it is how flows work — they run in system mode by default, including when started by a user-mode process. It is an intentional elevation. The design question is whether it was intentional: the flow should have restricted trigger criteria, the user-facing experience should not imply the user can do this themselves, and the design document should record the elevation. If nobody can articulate why the field must be updated this way, that is the finding.' }
+        ]
+      }
+    ],
+    quiz: {
+      title: 'Phase 14 Quiz · User Mode & Enforcement',
+      mins: 7,
+      questions: [
+        {
+          q: 'Which is enforced in user mode but not system mode?',
+          opts: ['Apex managed sharing', 'Object permissions and FLS', 'Sharing row visibility', 'The existence of share rows'],
+          a: 1,
+          why: 'Object permissions, FLS, record sharing, OWD and restriction rules are all bypassed in system mode. Share rows remain readable in both modes — they are data.'
+        },
+        {
+          q: 'Starting with API 67.0, what is the Apex default mode?',
+          opts: ['System mode', 'User mode', 'inherited sharing', 'Unchanged'],
+          a: 1,
+          why: 'User mode unless declared otherwise. Existing classes with an explicit declaration keep their behaviour.'
+        },
+        {
+          q: 'An org upgrades to Summer ’26 and nothing changed. Why?',
+          opts: ['The change was cancelled', 'Existing code with an explicit sharing declaration kept its behaviour; the default applies to undeclared code', 'The change only affects sandboxes', 'Enforcement requires an opt-in flag'],
+          a: 1,
+          why: 'Nothing breaks on upgrade, but posture improves only as code is modified. That is why auditing undeclared classes is the first task.'
+        },
+        {
+          q: 'What mode do flows run in by default?',
+          opts: ['User mode', 'System mode, including when started by a user-mode process', 'The mode of the user who started them', 'inherited sharing'],
+          a: 1,
+          why: 'System mode. That is why an automation can perform actions the user could not, and why every privilege elevation via automation should be deliberate and documented.'
+        },
+        {
+          q: 'What mode do triggers run in by default?',
+          opts: ['User mode', 'System mode', 'inherited sharing', 'The mode of the calling Apex'],
+          a: 1,
+          why: 'System mode. Declare the mode on the trigger to get user-mode behaviour, and audit what that change does to your DML.'
+        },
+        {
+          q: 'Which is a legitimate reason to keep a class in system mode?',
+          opts: ['It is faster', 'A scheduled roll-up recalculation across 2.4M records, running as a scoped service identity', 'It is simpler to write', 'To avoid error messages in tests'],
+          a: 1,
+          why: 'Scheduled batch processing with no human context is a sound case, and it must be justified with the identity and the scope named. Convenience is not a justification.'
+        },
+        {
+          q: 'What is the four-sentence justification for a system-mode class?',
+          opts: ['Class name, method, line count, owner', 'The operation, the identity it runs as, why user context fails, and what limits its reach', 'The org ID, the API version, the licence, the role', 'The trigger, the object, the field, the record'],
+          a: 1,
+          why: 'A class that cannot be justified in four sentences is doing too much. The scope limit is the part people omit, and it is the part that matters.'
+        },
+        {
+          q: 'A System.debug statement in a system-mode class prints a record’s field values. Why is it a finding?',
+          opts: ['Debug statements are slow', 'It writes potentially sensitive data to logs, which is a data protection issue rather than a debug issue', 'It triggers recalculation', 'It fails in user mode'],
+          a: 1,
+          why: 'Log output is a copy of the data in a place with different controls and often longer retention. Log identifiers only.'
+        },
+        {
+          q: 'What is the advantage of User Access Policies over permission set assignment?',
+          opts: ['They grant more access', 'Permissions are assigned by policy rather than by direct assignment, so grants are governed by a controlled process', 'They avoid FLS', 'They reduce licence usage'],
+          a: 1,
+          why: 'Policy-driven assignment means access cannot be granted outside the process that owns the policy, which closes a common change-control gap.'
+        },
+        {
+          q: 'Why is enforcement generally higher-value than configuration?',
+          opts: ['It is faster to deploy', 'Enforcement applies at runtime, so a mistake is caught immediately, whereas a wrong configuration can persist undetected for years', 'It requires no testing', 'It reduces recalculation'],
+          a: 1,
+          why: 'Configuration can be wrong and stay wrong. Enforcement cannot be wrong quietly. That is the argument for moving controls from configuration to enforcement.'
+        },
+        {
+          q: 'What is the user impact of enabling Profile Filtering enforcement?',
+          opts: ['None', 'Users may lose access to setup features they previously had, so it affects everyone and needs careful testing', 'Only admins are affected', 'It triggers a recalculation'],
+          a: 1,
+          why: 'It is org-wide. From a user’s perspective the effect resembles an OWD change, so it deserves the same testing discipline and the same comms planning.'
+        },
+        {
+          q: 'True or false: system mode prevents Apex from reading your share rows.',
+          opts: ['True', 'False — share rows are data and remain readable in both modes; system mode removes the platform’s enforcement around them'],
+          a: 1,
+          why: 'False, and it is a subtle point worth holding. Your grants are queryable by your own code regardless of mode.'
+        }
+      ]
+    }
+  },
+  /* ─────────────────────────── PHASE 15 ─────────────────────────── */
+  {
+    id: 'scalability',
+    n: 15,
+    title: 'Scalability, Recalculation & Skew',
+    icon: '📈',
+    color: '#0F766E',
+    exam: 'implications',
+    tagline: 'Sharing is a data structure, and it has a cost model',
+    guide: '15-Scalability-Recalculation-Skew.md',
+    art: [
+      { label: 'Recalculation runbook', href: 'docs/architecture/recalculation-runbook.md' },
+      { label: 'Sharing skew queries', href: 'scripts/soql/sharing-skew.soql' }
+    ],
+    objectives: [
+      'State what triggers a sharing recalculation, comprehensively, and predict the cost of each',
+      'Explain sharing skew and distinguish it from volume, and give the mitigation for each',
+      'Design changes that avoid unnecessary recalculation, and sequence a change wave deliberately',
+      'Apply the Spring ’27 asynchronous recalculation change to a real change plan'
+    ],
+    lessons: [
+      {
+        title: 'Everything that triggers a recalculation',
+        mins: 9,
+        blocks: [
+          { t: 'p', x: 'This list is the highest-value memorisation in the exam, because scenario questions are frequently about the operational consequence of a change.' },
+          { t: 'table', head: ['Trigger', 'Scope', 'Note'], rows: [
+            ['Changing the OWD', 'That object', 'The most common and most expensive'],
+            ['Changing Grant Access Using Hierarchies', 'That object', 'Frequently forgotten until it fires'],
+            ['Creating, editing or deleting a sharing rule', 'That object', 'Even a criteria tweak'],
+            ['Creating or deleting a role', 'That object', 'Also affects every user in the subtree'],
+            ['Adding or removing a user from a role', 'That object', 'Cheap for one user, expensive for ten thousand'],
+            ['Adding or removing group members', 'Objects with rules targeting that group', 'Cost scales with rule count'],
+            ['Adding a team member or changing an access field', 'Generally none — the value change is immediate', 'The exception that surprises people'],
+            ['Changing a permission set or PSG', 'None', 'Permissions change access without recalculating'],
+            ['Enabling or configuring sharing settings such as parallel partitioning', 'That object', 'Infrequent, but full-scope'],
+            ['Migrating to a large volume or object-scoped sharing model', 'Full', 'The reason object-scoped sharing exists']
+          ]},
+          { t: 'callout', kind: 'warn', x: 'Read the last four rows together. Permission changes do not recalculate, and team access-field changes do not recalculate — while almost everything else does. A model that is cheap to change is one built mostly from permissions and access fields; a model built from rules and roles is one where every structural change is an event.' },
+          { t: 'selfcheck', q: 'You add 500 users to a role in one data load. What is the operational consequence?', a: 'The role change triggers a recalculation for each affected object. Adding users in bulk to a role with hierarchy sharing enabled can be extremely expensive, and the cost is per object, per recalculation. The mitigations are to batch the changes outside business hours, to raise sharing limits if needed, and to consider whether the requirement genuinely needs the hierarchy — a permission set plus a criteria rule would have avoided the recalculation entirely.' }
+        ]
+      },
+      {
+        title: 'Volume versus skew',
+        mins: 9,
+        blocks: [
+          { t: 'p', x: 'Two different problems with different causes and different fixes. Conflating them leads to the wrong remedy.' },
+          { t: 'h', x: 'Volume: lots of records, spread evenly' },
+          { t: 'p', x: 'The problem is total work. A recalculation over 3.1M consent records is expensive because of the count. Mitigations: reduce the number of rules, simplify criteria so they use indexes, run in a window, and consider whether every record needs the same access model.' },
+          { t: 'h', x: 'Skew: few records, concentrated' },
+          { t: 'p', x: 'The problem is concentration. Skew occurs when a single user or a small number of users holds access to a very large proportion of an object’s records. It shows up as that user’s queries timing out, and it degrades the experience of exactly the most privileged user in the org.' },
+          { t: 'table', head: ['Skew pattern', 'Vantage example', 'Symptom'], rows: [
+            ['One user holds most records', 'A single integration user with View All on Member__c', 'Its batch jobs time out; other users may also slow'],
+            ['One rule grants to a very large group', 'A sharing rule to "All Agents" on a 2.4M-record object', 'Slow queries for every agent; long recalculation'],
+            ['Hierarchy grants to a top-of-tree role', 'The CEO holding implicit access to everything', 'The CEO’s views and reports are unusable'],
+            ['A large number of manual shares on one object', 'Accumulated one-off grants on Claim__c', 'Slow record loads; skew attributed to the object']
+          ]},
+          { t: 'callout', kind: 'warn', x: 'Skew is not solved by volume reduction. Adding capacity helps the org generally; it does not fix a single user whose access pattern is pathological. The fix for skew is structural: reduce what that one user or group can reach, or give them a narrower permission such as a criteria-based rule instead of View All.' },
+          { t: 'p', x: 'The diagnostic step matters: to distinguish volume from skew, compare a query as the privileged user against the same query as a normal user. If only the privileged user is slow, it is skew. If everyone is slow on that object, it is volume or a poorly selective filter.' }
+        ]
+      },
+      {
+        title: 'Designing a change wave',
+        mins: 9,
+        blocks: [
+          { t: 'p', x: 'A change wave is a sequenced plan for altering OWD, rules, roles or sharing settings on live objects. The sequencing is the skill.' },
+          { t: 'num', items: [
+            'Inventory: for each object, the current OWD, every rule, the hierarchy setting, the role depth and user counts, and the estimated record count.',
+            'Model before and after: the effective access for each named persona, so the delta is documented rather than assumed.',
+            'Order by blast radius: start with the object fewest users touch, so you learn the process on something small.',
+            'One object per window. Never batch OWD changes across objects in one recalculation, unless the platform specifically supports it.',
+            'Prepare the support path before the window: the exact query to verify access before and after, the rollback plan, and the escalation contact.',
+            'Schedule, then verify. Recalculation completes asynchronously, so the org is in a transitional state — do not start the next change until it settles.'
+          ]},
+          { t: 'callout', kind: 'tip', x: 'The transition state is the operational risk that gets forgotten. Between issuing a change and recalculation completing, users have inconsistent access: some rows updated, some not. Support tickets in that window are almost always "I can see some of my records but not others". Say so in advance, and resist the temptation to run the next change into the same window.' },
+          { t: 'table', head: ['Change', 'Typical cost', 'Risk if rushed'], rows: [
+            ['OWD change on a small internal object', 'Minutes', 'Low — a good first exercise'],
+            ['OWD change on a 2.4M-member object', 'Hours', 'High — the transition state is user-visible'],
+            ['Sharing rule criteria change', 'Hours on a large object', 'A malformed filter can share far more than intended'],
+            ['Role hierarchy change', 'Variable, scales with subtree', 'Silent loss of implicit access'],
+            ['Permission set change', 'Minutes, no recalculation', 'Workflow breakage at next login, not at deploy time']
+          ]},
+          { t: 'p', x: 'And the design lesson that follows from all of it: if a change you need is expensive, consider whether a different mechanism would deliver the same access without a recalculation. A requirement served by permissions rather than rules is a requirement you can change for free.' }
+        ]
+      },
+      {
+        title: 'The Spring ’27 asynchronous recalculation change',
+        mins: 8,
+        blocks: [
+          { t: 'p', x: 'Salesforce announced support for asynchronous sharing recalculation with Spring ’27, and the reason it exists is worth understanding rather than memorising.' },
+          { t: 'p', x: 'The synchronous model couples the change to the request: the admin waits, the request may time out, and the change is either fully applied or not at all. That is poor fit for exactly the changes that matter most — a large OWD change on a very large object — because the operation is long and the window is short.' },
+          { t: 'list', items: [
+            'The recalculation runs as a background job, so a long recalculation no longer has to fit inside a request.',
+            'The admin gets a monitorable job with progress, rather than a spinner or a timeout.',
+            'Multiple recalculations can be queued, which is what makes batching a change wave across objects practical.',
+            'The trade-off is that access is inconsistent while the job runs — the transition state becomes the normal case rather than an exception.'
+          ]},
+          { t: 'callout', kind: 'warn', x: 'The transition state moving from exception to normal case is the architectural implication, and it is where your runbook must be stronger. If your process assumed that once the change returned, the org was consistent, that assumption is now wrong for longer periods. Build verification into the process as a scheduled step rather than a manual one, and make "is the job still running" a question your support process knows to ask.' },
+          { t: 'p', x: 'The practical architecture recommendation, independent of the exact release mechanics: treat recalculation as an asynchronous operation with its own lifecycle — queued, running, verified, closed — and design the change wave around that lifecycle rather than around a synchronous call.' }
+        ]
+      },
+      {
+        title: 'Monitoring and capacity',
+        mins: 8,
+        blocks: [
+          { t: 'p', x: 'The final piece is noticing problems before users do, and it is mostly a matter of knowing what to look at.' },
+          { t: 'table', head: ['Signal', 'Where', 'Interpretation'], rows: [
+            ['Sharing recalculation status', 'Setup, or the Tooling API', 'Whether a change has completed; how long it is taking'],
+            ['Sharing usage against limits', 'Setup, org limits', 'Approaching a ceiling; the point to redesign rather than raise'],
+            ['Query timeouts for a specific user', 'Setup, query history', 'Skew, not volume — check who that user is'],
+            ['A disproportionate number of share rows on one object', 'Tooling API count', 'Manual share accumulation, or an over-broad rule target'],
+            ['Recalculation duration trending up over successive changes', 'Change log', 'Volume growth, or an accumulating long tail of manual shares']
+          ]},
+          { t: 'callout', kind: 'tip', x: 'One practical query worth having ready: count share rows per object and per grantee, and sort descending. The top entries identify skew immediately, and the long tail identifies manual share accumulation. It is one query, it needs no special permission beyond what an architect already has, and it is the fastest diagnostic in this entire phase.' },
+          { t: 'p', x: 'And the architectural habit that prevents most of it: prefer permission changes to sharing-rule changes wherever both would work. Permissions are free, immediate and reversible in a way that recalculations are not. That single preference, applied consistently, is what keeps a large org’s sharing model operable.' },
+          {
+            t: 'ex',
+            id: '15.1',
+            title: 'Diagnose skew versus volume on the Member__c object',
+            obj: 'Use queries and timing data to determine whether Vantage’s performance problem is volume or skew, and produce the structural fix.',
+            stars: 3,
+            steps: [
+              'Time an equivalent list view and an equivalent SOQL query as a normal field agent and as the integration user.',
+              'Count share rows on Member__c, grouped by grantee. Identify the top five grantees and their percentage of total.',
+              'Compare the recalculation duration for Member__c against the record count on each of the five custom objects.',
+              'Classify: skew, volume, or both. Justify from the data.',
+              'Design the fix for whichever you found, and predict the effect on recalculation duration.'
+            ],
+            verify: 'A data-derived classification, the top grantees named with percentages, and a structural fix with a predicted effect. If the classification is "both", both are addressed.'
+          },
+          {
+            t: 'ex',
+            id: '15.2',
+            title: 'Build and rehearse a change wave',
+            obj: 'Plan a sequenced OWD and rule change wave for the Vantage objects, with blast radius ordering and a rollback plan.',
+            stars: 3,
+            steps: [
+              'Inventory all five custom objects: OWD, rule count, hierarchy setting, record count, and affected persona count.',
+              'Model the before and after effective access for three named personas on each object you intend to change.',
+              'Order the changes by blast radius, smallest first, and justify the order.',
+              'For the largest change, write the verification query and the rollback plan, including what you would do if the rollback is itself expensive.',
+              'Write the support note describing the transitional state, so tickets during the window are anticipated.'
+            ],
+            verify: 'A complete inventory, documented before/after access for three personas per changed object, a defensible ordering, a verification query and rollback plan, and a support note that anticipates the window.'
+          },
+          {
+            t: 'ex',
+            id: '15.3',
+            title: 'Replace an expensive mechanism with a cheap one',
+            obj: 'Take a requirement delivered by a mechanism that forces recalculation and reimplement it with one that does not, then verify identical access.',
+            stars: 3,
+            steps: [
+              'Identify a Vantage requirement currently served by a sharing rule or the role hierarchy that forces recalculation on change.',
+              'Establish the current effective access for three personas, field by field and record class by record class.',
+              'Reimplement the requirement with permission sets, permission set groups, or field-level access, so a future change needs no recalculation.',
+              'Verify the effective access is identical for the three personas, and that the mechanism change itself required no recalculation.',
+              'Write the note explaining the trade: you have given up automatic maintenance in favour of a change that is cheap, and you should state what now has to be maintained by hand.'
+            ],
+            verify: 'Identical effective access across the three personas, no recalculation required for the change, and an honest statement of what the trade-off now requires someone to maintain.'
+          },
+          { t: 'selfcheck', q: 'You must give 4,000 brokers read access to their employer’s members. Your first design uses a sharing rule per broker group. What is wrong and what is better?', a: 'Two problems. Four thousand groups is unmanageable and every membership change triggers recalculation on a large object — the per-group maintenance is the design failure. Better: a sharing set, because the access follows the account relationship automatically with no group administration and no per-change recalculation. The general principle: prefer a mechanism that maintains itself over one that requires someone to maintain it, and prefer permission changes to rule changes.' }
+        ]
+      }
+    ],
+    quiz: {
+      title: 'Phase 15 Quiz · Scalability, Recalculation & Skew',
+      mins: 7,
+      questions: [
+        {
+          q: 'Which change does NOT trigger a sharing recalculation?',
+          opts: ['Changing the OWD', 'Changing Grant Access Using Hierarchies', 'Assigning a permission set group', 'Editing a sharing rule’s criteria'],
+          a: 2,
+          why: 'Permission changes alter what users can reach without recalculating. OWD, hierarchy settings, rule changes and role changes all recalculate.'
+        },
+        {
+          q: 'A record’s team access field changes from Team A to Team B. Does this trigger a recalculation?',
+          opts: ['Yes, because team membership changed', 'No — the access field value change is applied immediately'],
+          a: 1,
+          why: 'Team access is evaluated from the field value, so the change is immediate. This is the exception that surprises people, and it is a reason teams are relatively cheap.'
+        },
+        {
+          q: 'What distinguishes sharing skew from volume?',
+          opts: ['Skew is about record count, volume about user count', 'Skew is concentration — a few users holding access to a large proportion of records; volume is total work spread evenly', 'They are the same problem', 'Skew only affects custom objects'],
+          a: 1,
+          why: 'Skew degrades the experience of the most privileged user and is not fixed by adding capacity. Volume is fixed by reducing rules, simplifying criteria and running in a window.'
+        },
+        {
+          q: 'Only the integration user’s queries time out on Member__c. What is the likely diagnosis?',
+          opts: ['Volume', 'Skew — that user holds a disproportionate share of the records', 'A malformed sharing rule', 'A missing index'],
+          a: 1,
+          why: 'If only one user is slow, it is skew. If everyone is slow on the object, it is volume or a poorly selective filter. The diagnostic is a comparison, not a guess.'
+        },
+        {
+          q: 'Adding 5,000 users to a role can be very expensive. Why?',
+          opts: ['Roles have a hard user limit', 'Each role change triggers recalculation for the affected objects', 'Each user needs a permission set', 'Roles are recalculated hourly'],
+          a: 1,
+          why: 'Role membership changes recalculate, per object. Batch outside business hours, raise limits if needed, and consider whether the hierarchy is genuinely required.'
+        },
+        {
+          q: 'What is the transitional state between issuing an OWD change and recalculation completing?',
+          opts: ['Users lose all access temporarily', 'Access is inconsistent — some share rows updated, some not — so users see some records and not others'],
+          a: 1,
+          why: 'That is the operational risk to plan for, and it is why "I can see some of my records but not others" tickets cluster in that window.'
+        },
+        {
+          q: 'What is the right sequence for a change wave?',
+          opts: ['Largest blast radius first, to get it over with', 'Smallest blast radius first, one object per window, waiting for each recalculation to settle', 'All objects in one batch to minimise total downtime', 'Random order, to avoid systematic bias'],
+          a: 1,
+          why: 'Start where the consequences are smallest so you learn the process safely, and never batch across objects without a specific reason.'
+        },
+        {
+          q: 'Why do you wait for recalculation to settle before starting the next change?',
+          opts: ['To avoid licence errors', 'Because the org is in an inconsistent access state and stacking changes makes diagnosis impossible', 'Because sharing cannot run concurrently', 'To allow indexing'],
+          a: 1,
+          why: 'Stacked changes in a transitional state are effectively un-debuggable. One object per window is slower and much faster overall.'
+        },
+        {
+          q: 'What does Spring ’27 asynchronous sharing recalculation change?',
+          opts: ['The OWD default', 'Recalculation runs as a monitorable background job rather than inside the request, so long recalculations no longer need to fit a request'],
+          a: 1,
+          why: 'And the trade-off: the inconsistent-access window becomes longer and normal. That is why the runbook must treat recalculation as a job with its own lifecycle.'
+        },
+        {
+          q: 'A requirement needs a change that would be expensive. What should you consider first?',
+          opts: ['Raising the sharing limits', 'Whether a permission-based or field-level mechanism could deliver the same access with no recalculation', 'Running it at the weekend', 'Using Apex instead'],
+          a: 1,
+          why: 'Permissions are immediate, reversible and free of recalculation. Preferring them to rules is the habit that keeps a large sharing model operable. Raising limits treats the symptom.'
+        },
+        {
+          q: 'Which single query is the fastest diagnostic in this phase?',
+          opts: ['A count of records per object', 'A count of share rows per object and per grantee, sorted descending', 'A query of the role hierarchy', 'A count of permission set assignments'],
+          a: 1,
+          why: 'The top entries show skew immediately and the long tail shows manual share accumulation — one query, no special permission, fastest diagnosis available.'
+        },
+        {
+          q: 'A CEO’s dashboard and reports are unusable at Vantage. What is the likely cause and fix?',
+          opts: ['Too many records on Account — reduce OWD', 'Hierarchy skew: the CEO holds implicit access to everything, so their queries span the whole object', 'The reports are built incorrectly', 'The CEO needs Modify All'],
+          a: 1,
+          why: 'Skew from hierarchy position. The structural fix is to give the CEO a narrower mechanism than implicit access everywhere — for example, purpose-built reports or a summarised object — rather than relying on the hierarchy.'
+        }
+      ]
+    }
+  },
+  /* ─────────────────────────── PHASE 16 ─────────────────────────── */
+  {
+    id: 'licencingtesting',
+    n: 16,
+    title: 'Licences, Testing & Verification',
+    icon: '🧪',
+    color: '#7E22CE',
+    exam: 'otherdata',
+    tagline: 'Access rules that depend on a licence, and the tests that prove any of it works',
+    guide: '16-Licences-Testing.md',
+    art: [
+      { label: 'Licence and feature matrix', href: 'docs/architecture/licence-matrix.md' },
+      { label: 'Access verification test plan', href: 'docs/architecture/verification-test-plan.md' }
+    ],
+    objectives: [
+      'Explain how licences gate access independently of permissions and sharing, and what that means for a design',
+      'Map Vantage personas to licence requirements, including the external and integration cases',
+      'Build a verification test plan that proves a security model rather than a user flow',
+      'Explain what a sharing recalculation does to licensing and why licence count changes after a change wave'
+    ],
+    lessons: [
+      {
+        title: 'Licences as an access gate',
+        mins: 8,
+        blocks: [
+          { t: 'p', x: 'A licence is the outermost gate. No permission, sharing rule or Apex grant gives a user access to a feature their licence does not include — the request fails before the security model is consulted.' },
+          { t: 'h', x: 'The three-part question for any access requirement' },
+          { t: 'num', items: [
+            'Does the user have a licence that includes the feature?',
+            'Do their permissions grant the object and field access?',
+            'Does the sharing model give them the record?'
+          ]},
+          { t: 'p', x: 'All three must be satisfied, and they are administered in three different places by three different teams. That is why access problems are slow to diagnose: the answer is usually "yes, no, yes" or "yes, yes, no", and you have to know which one is failing.' },
+          { t: 'callout', kind: 'warn', x: 'A licence failure looks nothing like a permissions failure. A permissions failure gives you a record you cannot see. A licence failure gives you an error, an empty page, or a feature that simply does not appear. Recognising the shape of the failure tells you where to look before you start reading permission sets.' },
+          { t: 'table', head: ['Failure', 'What the user sees', 'Where to look'], rows: [
+            ['No licence', 'An error, or the feature is invisible', 'User’s licence and feature assignments'],
+            ['No permission', 'The object, tab or action is missing; the record is invisible', 'Profile and permission set'],
+            ['No field access', 'The field is blank or absent, including in reports', 'FLS'],
+            ['No record access', 'The object is there, the record is not', 'Sharing, OWD, hierarchy, Apex'],
+            ['Wrong record type or layout', 'The record opens but fields are missing', 'Record type, page layout — not a security issue']
+          ]},
+          { t: 'selfcheck', q: 'A user can see the Claims tab, can open a Claim__c list, but every record is empty and reports return nothing. Where do you look first?', a: 'Licence, then permissions, then sharing — in that order, but the empty record list points at sharing or OWD rather than at permissions. If the tab is visible and the object is queryable, the licence and object permissions are fine. So look at record-level access: is the OWD public, is there a rule, does the user own anything, and did a recent recalculation leave rows inconsistent?' }
+        ]
+      },
+      {
+        title: 'Mapping personas to licences',
+        mins: 9,
+        blocks: [
+          { t: 'p', x: 'The exam expects you to reason about the licensing consequences of an access design, and the recurring points are these.' },
+          { t: 'table', head: ['Situation', 'Licence consequence', 'Design implication'], rows: [
+            ['External users on Experience Cloud sites', 'Consumption-based or per-user, depending on the model and the member’s authentication', 'The external model must be chosen with licensing in mind, not added later'],
+            ['A high-volume or industry user', 'A specific licence may be required regardless of permission assignment', 'Some roles simply cannot be given to a user without the licence'],
+            ['API access from an integration', 'An API licence is separate from user licences', 'Integration users need a licence decision; a shared integration identity is a real design question'],
+            ['Sandbox refresh', 'Consumes licences and requires an org-level process', 'Refresh is not a free operation for a large dev org'],
+            ['A user assigned multiple functions', 'One licence covers the features it includes', 'Do not buy three licences for three permission sets — licences are per feature, not per permission set'],
+            ['Users provisioned but inactive', 'Still consume licences', 'Deactivation must actually happen; licence management is a security-adjacent concern']
+          ]},
+          { t: 'callout', kind: 'tip', x: 'The row people get wrong is the penultimate one. Licences are feature entitlements, not permission bundles. Assigning five permission sets does not require five licences, and conversely a licence does not grant the permissions — it only permits the feature. Keeping those two ideas apart is what makes a licensing conversation tractable.' },
+          { t: 'p', x: 'The security-relevant point: a user who needs a licence they do not have may be given access in the org and then discover at runtime that it does not work, which produces workarounds — shared accounts, elevated integration identities — that are genuinely worse for security than the licence purchase.' },
+          { t: 'selfcheck', q: 'An integration needs to write to Member__c from a nightly job. What decisions must be made?', a: 'Identity first: a named integration user rather than an admin, with permissions scoped to the objects and fields it needs. Then licence: an API or user licence is required, and it should be recorded as a deliberate cost. Then mode: the job runs as that service identity in system mode with a written justification. Then reach: a Modify All on Member__c is tempting and probably unnecessary — scoped Edit plus a filter is safer and works, since a service identity does not need to see every record.' }
+        ]
+      },
+      {
+        title: 'Licensing and recalculation',
+        mins: 7,
+        blocks: [
+          { t: 'p', x: 'The link between sharing changes and licence consumption is worth understanding, because it catches organisations by surprise.' },
+          { t: 'p', x: 'Sharing itself is not licensed. But two things around it are: sandboxes and scratch orgs consume licences, and users provisioned to support a change — testers, temporary reviewers — consume licences whether or not they are using them.' },
+          { t: 'callout', kind: 'warn', x: 'The pattern that hurts: a change wave needs 50 named users from eight business units to verify access, so they are provisioned with full licences for two weeks. If the deprovisioning step is manual and someone forgets, the licences stay consumed indefinitely, and the org quietly exceeds its allocation. Make deprovisioning part of the change record rather than a follow-up task.' },
+          { t: 'p', x: 'A second, subtler cost: a large manual-share long tail and an over-broad rule target both consume sharing rows, which is a capacity question rather than a licensing one, but it arrives in the same conversation when someone asks whether the org can scale. It helps to separate the two cleanly in a capacity review.' },
+          { t: 'h', x: 'The verification questions to ask' },
+          { t: 'num', items: [
+            'Which licences does this design require, and for whom?',
+            'Are there personas the design requires that cannot be licensed as proposed?',
+            'What does a change wave consume temporarily, and what deprovisions it?',
+            'Which sandboxes and scratch orgs does the delivery process hold, and on what expiry?'
+          ]}
+        ]
+      },
+      {
+        title: 'Verification: proving a security model',
+        mins: 10,
+        blocks: [
+          { t: 'p', x: 'Testing a security model is a different discipline from testing features. The objective is not "does it work" but "does it fail in exactly the ways you designed".' },
+          { t: 'h', x: 'The four test types, and why you need all of them' },
+          { t: 'table', head: ['Type', 'Question', 'Technique'], rows: [
+            ['Positive', 'Can this persona reach what they should?', 'Log in as the persona and confirm each intended access'],
+            ['Negative', 'Can this persona reach what they should not?', 'Attempt the query or navigation you intend to deny'],
+            ['Escalation', 'Can this persona reach it by an unintended route?', 'Try the API, a report, an export, a Lightning component, a flow'],
+            ['Transition', 'Is access correct during and after a change?', 'Test mid-recalculation and immediately post-change']
+          ]},
+          { t: 'callout', kind: 'warn', x: 'Most access testing is positive-only, and positive tests almost never find a security defect. The defects are in the negative and escalation cases: the report that bypasses the layout, the export that includes the restricted field, the Apex that does not enforce FLS. Budget most of the effort there.' },
+          { t: 'h', x: 'The technique that matters' },
+          { t: 'p', x: 'Attempt the denial. Do not reason about it — try it. For every persona and every record class they should not reach, write and run the query. For fields, query them directly through the API. For pages, navigate to them. A negative test that is reasoned rather than attempted is not a test.' },
+          { t: 'p', x: 'And escalate the route rather than repeating the obvious one. If you verified in the UI, test the API. If you verified with SOQL, test a report and an export. If you verified a report, test a Lightning component that fetches its data differently. The defects live in the routes you did not try.' },
+          { t: 'callout', kind: 'tip', x: 'Two test cases people forget and that consistently find real issues: a persona whose related record is missing or broken (the orphan case), and a persona with a slightly different access than the one you designed for — the contractor who also has a second role. Both are realistic and both break assumptions that hold in the happy path.' },
+          {
+            t: 'ex',
+            id: '16.1',
+            title: 'Build the persona-by-record-class verification matrix',
+            obj: 'Produce the matrix that defines what the model should permit, then turn it into executed tests with recorded results.',
+            stars: 4,
+            steps: [
+              'List every persona: the eight internal roles, the six external personas, and the integration identity.',
+              'For each persona, list every object and record class they should reach, and every one they should not.',
+              'Estimate the test count. It will be larger than you expect — accept the number rather than sampling.',
+              'Execute the positive and negative cases. Record pass, fail, and for each failure the mechanism responsible.',
+              'Execute at least three escalation cases per persona: API, report or export, and an alternate UI route.',
+              'Produce a findings list with severity, and re-test the fixes.'
+            ],
+            verify: 'A complete matrix, every negative case executed rather than reasoned, three escalation routes per persona, and a findings list that is closed or escalated with severity.'
+          },
+          {
+            t: 'ex',
+            id: '16.2',
+            title: 'Write the licence plan and find the design conflicts',
+            obj: 'Map the Vantage personas to licences, and identify every access requirement that cannot be satisfied as currently designed.',
+            stars: 3,
+            steps: [
+              'For each persona, state the licence required and the features that drive it.',
+              'Identify any persona whose required features exceed a standard licence, and state what that means for the design.',
+              'For the integration user, specify the identity, the licence, the permissions and the mode, with a written justification for the last two.',
+              'For the external model, state the licensing basis and what it depends on about member authentication.',
+              'List the conflicts: requirements that cannot be licensed as designed, and what you would change. Include at least one requirement you would redesign rather than purchase.'
+            ],
+            verify: 'A complete persona-to-licence map, every conflict named, an integration identity specified in four parts, and at least one requirement you chose to redesign rather than buy a licence for.'
+          },
+          {
+            t: 'ex',
+            id: '16.3',
+            title: 'Re-test after a change',
+            obj: 'Run the full verification matrix during and after a change wave, and produce the transitional-state findings.',
+            stars: 4,
+            steps: [
+              'Take the change wave from exercise 15.2 and run the matrix before the change as a baseline.',
+              'During recalculation, execute a sample of negative tests. Record the inconsistent results you predict.',
+              'After the change completes, re-run the full matrix. Diff against the baseline.',
+              'For each difference, decide: intended by the design, or a defect.',
+              'Write the findings about the transitional state that you would add to the runbook, based on what you actually observed.'
+            ],
+            verify: 'A before, during and after diff. Every difference classified as intended or defective, and runbook additions grounded in observation rather than assumption.'
+          },
+          { t: 'selfcheck', q: 'A user has all the right permission sets and a sharing rule grants them the records, but the feature is not available. What is wrong?', a: 'The licence. Licences gate the feature before permissions and sharing are consulted, so a complete and correct security model still fails on a licensing gap. This is why the licence check comes first in diagnosis: it explains a failure that looks like a security failure and is not one. And it is a design finding — if the requirement cannot be licensed, the design has to change, not the user’s permissions.' }
+        ]
+      }
+    ],
+    quiz: {
+      title: 'Phase 16 Quiz · Licences, Testing & Verification',
+      mins: 6,
+      questions: [
+        {
+          q: 'Which gate is checked first when a user attempts a feature?',
+          opts: ['Record-level sharing', 'The licence', 'Field-level security', 'The profile'],
+          a: 1,
+          why: 'Licences gate the feature before the security model is consulted. The order is licence, permissions, then sharing.'
+        },
+        {
+          q: 'A user has all correct permissions and a granting sharing rule, but the feature is unavailable. Most likely cause?',
+          opts: ['The sharing rule criteria are malformed', 'The user lacks the required licence', 'The OWD is Private', 'A recalculation is in progress'],
+          a: 1,
+          why: 'A licence failure looks like an error or a missing feature, not like a permissions failure. A complete security model still fails on a licensing gap.'
+        },
+        {
+          q: 'True or false: a user assigned five permission sets may require five licences.',
+          opts: ['True', 'False — licences are feature entitlements, not permission bundles'],
+          a: 1,
+          why: 'False. One licence covers the features it includes. Conversely a licence grants no permissions — it only permits the feature.'
+        },
+        {
+          q: 'Which failure looks like a missing feature or an error page?',
+          opts: ['A licence failure', 'A record-level sharing failure', 'A field-level failure', 'A page layout problem'],
+          a: 0,
+          why: 'A licence failure produces an error or an invisible feature. A sharing failure produces a visible object with an invisible record — a different shape entirely.'
+        },
+        {
+          q: 'Why can a licence gap be a security problem rather than a commercial one?',
+          opts: ['Licences are expensive', 'Users given access they cannot use produce workarounds such as shared accounts and over-elevated integration identities', 'Licences affect sharing', 'Licences bypass FLS'],
+          a: 1,
+          why: 'Workarounds for an unusable access grant are typically worse for security than the licence purchase would have been.'
+        },
+        {
+          q: 'A nightly integration writes to Member__c. Which identity design is correct?',
+          opts: ['A sysadmin account with Modify All Data', 'A named integration user with scoped permissions and a documented licence and mode'],
+          a: 1,
+          why: 'A named service identity with permissions scoped to the objects and fields needed, a recorded licence, and a written justification for its mode. Scoped Edit plus a filter usually suffices.'
+        },
+        {
+          q: 'Why does a change wave risk long-term licence consumption?',
+          opts: ['Recalculation consumes licences', 'Temporary test users are provisioned with full licences, and deprovisioning is manual and forgettable', 'Permission sets consume licences per assignment', 'Sandbox refresh doubles consumption'],
+          a: 1,
+          why: 'So deprovisioning must be part of the change record rather than a follow-up task, or the org quietly exceeds its allocation.'
+        },
+        {
+          q: 'Which test type actually finds security defects?',
+          opts: ['Positive tests — confirming intended access works', 'Negative and escalation tests — attempting the denial and trying alternate routes'],
+          a: 1,
+          why: 'Positive tests almost never find a defect. The issues are in the routes you did not try: the API, the report, the export, a Lightning component.'
+        },
+        {
+          q: 'What does "attempt the denial" mean in practice?',
+          opts: ['Reason carefully about whether access is blocked', 'Run the query, navigate to the page, and export the report, and record what actually returns'],
+          a: 1,
+          why: 'A negative test that is reasoned rather than attempted is not a test. Write the denial query and run it as the persona.'
+        },
+        {
+          q: 'Why test the API when the UI already looks correct?',
+          opts: ['The API is faster', 'Layouts and UI checks do not reflect API behaviour, and FLS, sharing and masking can differ by route'],
+          a: 1,
+          why: 'Verify in one route and test another. A field hidden by a layout is fully queryable via the API — the classic example.'
+        },
+        {
+          q: 'Which test case is most likely to be forgotten and finds real issues?',
+          opts: ['A user with full access', 'A persona whose related record is missing or broken, or who holds a second role in addition to the designed one'],
+          a: 1,
+          why: 'Orphaned references and slightly-different personas are realistic, and they break assumptions that hold in the happy path.'
+        },
+        {
+          q: 'Is a sandbox refresh a free operation for a large dev org?',
+          opts: ['Yes', 'No — it consumes licences and requires an org-level process and expiry'],
+          a: 1,
+          why: 'Sandboxes and scratch orgs consume licences. Refresh frequency and expiry are part of capacity planning and part of security hygiene.'
+        }
+      ]
+    }
+  },
+  /* ─────────────────────────── PHASE 17 ─────────────────────────── */
+  {
+    id: 'otherdata',
+    n: 17,
+    title: 'Non-Record Data: Settings, Metadata & Files',
+    icon: '🗃️',
+    color: '#0891B2',
+    exam: 'otherdata',
+    tagline: 'The 16% that is not about records at all',
+    guide: '17-Non-Record-Data.md',
+    art: [
+      { label: 'Non-record data inventory', href: 'docs/architecture/non-record-data-inventory.md' },
+      { label: 'Custom metadata permissions', href: 'force-app/main/default/customMetadata/' }
+    ],
+    objectives: [
+      'Enumerate the non-record data types and state, for each, who can read it and who can change it',
+      'Explain why custom settings and custom metadata are access-controlled differently from records',
+      'Recognise the non-record exposures that appear in real security reviews',
+      'Apply the same discipline to files, reports, dashboards and configuration data'
+    ],
+    lessons: [
+      {
+        title: 'The taxonomy, and why the domain exists',
+        mins: 8,
+        blocks: [
+          { t: 'p', x: 'The fourth exam domain is Access to Other Data, and it exists because the Access to Records and Permissions domains both implicitly assume the data is records. A meaningful part of a real Salesforce org is not.' },
+          { t: 'table', head: ['Type', 'Holds', 'Access controlled by'], rows: [
+            ['Custom metadata type and records', 'Configuration deployed with code, immutable to users', 'Metadata API permissions; visible to Apex by default'],
+            ['Custom settings — hierarchy', 'Runtime configuration with its own record-like visibility', 'A custom object with a $USER Global / $USER Profile hierarchy'],
+            ['Custom settings — list', 'A set of runtime values', 'A custom object; read access follows the same hierarchy logic'],
+            ['Custom permissions', 'A named boolean you can reference in formulas, flows and Apex', 'Assigned to profiles, permission sets and PSGs'],
+            ['Files and Content', 'Attachments, Salesforce Files, ContentDocument', 'File access, sharing, and object permissions on the parent'],
+            ['Reports and dashboards', 'Definitions and their cached results', 'Folder sharing, and report sharing; hidden by default from users without access'],
+            ['Apex, flows, validation rules, workflows', 'Automation definitions', 'Setup; not record-scoped; not user-editable'],
+            ['Big Objects and Async SOQL', 'Very large data sets', 'Permission sets; restricted by design']
+          ]},
+          { t: 'callout', kind: 'tip', x: 'The row that most often appears in a review finding: reports. A report’s definition is shared to a folder, and its results reflect the report owner’s access at run time unless run-as is specified. A user can therefore see data in a report that they could not query directly, which is correct behaviour and a genuine disclosure surface that must be managed deliberately.' },
+          { t: 'selfcheck', q: 'Why is custom metadata a different security question from a custom setting?', a: 'Custom metadata is deployment configuration — it is not user-editable, it ships with code, and it is readable by Apex. Custom settings are runtime configuration stored as records of a hidden custom object, with their own visibility hierarchy and their own recalculation characteristics. The security question differs entirely: metadata is about who can read configuration, settings are about who can read and change runtime values.' }
+        ]
+      },
+      {
+        title: 'Custom settings, and the hidden object',
+        mins: 9,
+        blocks: [
+          { t: 'p', x: 'Custom settings are records of a custom object you cannot see in the object manager. That is the source of most confusion, and it has one useful consequence: the object is real, so the access model applies to it, including a hierarchy setting.' },
+          { t: 'table', head: ['Visibility option', 'Who reads a value', 'Use when'], rows: [
+            ['$USER Global', 'The specific user who set the value; others read the default', 'Per-user preferences, e.g. a default queue'],
+            ['$USER Profile', 'Users of the same profile', 'Behaviour that varies by role, e.g. a page size or a default view'],
+            ['$User Hierarchical', 'Users of the same profile and the same role, plus subordinates in the hierarchy', 'Behaviour that follows the org chart, e.g. approval thresholds'],
+            ['System Default only', 'Everyone reads the system default', 'Genuinely global configuration']
+          ]},
+          { t: 'callout', kind: 'warn', x: 'The hierarchical option means a value set by a manager is readable by their reports. If you use $User Hierarchical, you are creating an implicit information flow down the org chart — which is occasionally what you want and frequently a surprise. Choose it deliberately and document who inherits a value.' },
+          { t: 'p', x: 'Two operational points: custom settings support full sharing-rule and Apex-managed-sharing treatment because they are real objects, and changing them does not affect record access — they are configuration read by formulas and Apex, not access rules themselves. A custom setting cannot be used to grant access; it can only be used to decide what to show.' },
+          { t: 'selfcheck', q: 'You store a security-relevant flag in a custom setting and have Apex read it to decide whether to share a record. Is that sound?', a: 'It is a legitimate mechanism, with two cautions. First, the flag is configuration, not a control: anyone with edit access to the custom setting can change the behaviour for every user, so the edit access to the setting is as sensitive as the code that reads it. Second, because it is not record-scoped, it is invisible in record-level access reviews. If the decision is security-relevant, make the flag’s edit access tightly scoped and name that in the design.' }
+        ]
+      },
+      {
+        title: 'Custom metadata, custom permissions and the config surface',
+        mins: 8,
+        blocks: [
+          { t: 'p', x: 'The configuration surface is where non-record data lives, and it has three distinct access questions.' },
+          { t: 'h', x: 'Custom metadata' },
+          { t: 'p', x: 'Custom metadata records are deployed, are not user-editable, and are read by Apex and by formula references. The access question is who can read the configuration and who can deploy it. Because it is not user-editable, the risk is not tampering by users — it is that a sensitive value is hard-coded into metadata, where it is readable by anyone with access to the metadata API and visible in the repository.' },
+          { t: 'callout', kind: 'warn', x: 'So custom metadata is a bad home for secrets. A key, a password or a connection detail in a custom metadata record is readable by anyone with metadata API access and is committed to your repository in plaintext. Use a protected custom setting, or Salesforce’s secrets facilities, and keep credentials out of metadata entirely.' },
+          { t: 'h', x: 'Custom permissions' },
+          { t: 'p', x: 'A custom permission is a named boolean. It can be assigned to profiles, permission sets and permission set groups, and referenced in formulas, flows and Apex. It is a small, clean, auditable way to express a capability that does not map to an object permission — for example "may view masked SSN".' },
+          { t: 'callout', kind: 'tip', x: 'Custom permissions pair naturally with the Winter ’27 field masking: the entitlement to see the unmasked value can be a custom permission, so the decision is visible in Setup and auditable, rather than buried in a permission set name. That is a better pattern than inferring entitlement from a permission set’s existence.' },
+          { t: 'h', x: 'Setup and configuration' },
+          { t: 'p', x: 'Setup access is the broadest non-record exposure. Profile Filtering, from Winter ’27, changes this materially by enforcing which profile features are available — so a user without the Setup permission cannot even see the Setup menu, rather than seeing it and being refused. That converts a navigational control into an enforced one, which is the pattern from Phase 14 applied to configuration.' }
+        ]
+      },
+      {
+        title: 'Files, reports and dashboards',
+        mins: 9,
+        blocks: [
+          { t: 'p', x: 'Three more non-record exposures, each with its own subtlety.' },
+          { t: 'table', head: ['Surface', 'The subtlety', 'Where it goes wrong'], rows: [
+            ['Files and Salesforce Files', 'File access is separate from record access; a file can be shared to a person or a queue independently of its parent record', 'A file containing PHI shared to a public group, or attached to a record in a different sharing scope'],
+            ['Reports', 'A report’s results follow the owner’s access unless run-as is specified; a report shared to a folder exposes its results to everyone with folder access', 'A report run as a high-privilege owner and shared to a broad folder'],
+            ['Dashboards', 'A dashboard aggregates results and can show numbers a user cannot drill into', '"My report is wrong" reports, and genuine over-exposure through a component run as another user'],
+            ['Exports', 'Exports honour FLS and sharing for the running user', 'Exports scheduled to run as a service identity and emailed onward'],
+            ['List views and filters', 'A saved list view may run as a different user, and its filter can reference fields the viewer cannot see', 'A list view that reveals the existence of records in a scope the viewer should not perceive']
+          ]},
+          { t: 'callout', kind: 'warn', x: 'Files are the classic PHI finding. The record may be correctly protected while the file attached to it is shared to a queue or a public group, and the file carries the same data with none of the record’s protections. At Vantage, the rule should be that any file containing member data inherits the access of its parent record, enforced by review and by not sharing files independently.' },
+          { t: 'p', x: 'Reports deserve the same care for a structural reason: they are a legitimate, supported way to give a user visibility they could not otherwise obtain, which is convenient and also a way for access to leak. Every report shared to a folder should be understood as a deliberate grant, and every report that runs as someone other than the viewer should be named as such in the design.' },
+          { t: 'h', x: 'Big Objects and large data' },
+          { t: 'p', x: 'Big Objects, External Objects and Async SOQL exist for very large data, and their access model is deliberately restricted: separate permissions, and a restricted set of operations. Their existence is worth knowing for two reasons — they are an access-controlled surface distinct from the standard object model, and they are the correct answer when a design is straining against data volume rather than against permissions.' }
+        ]
+      },
+      {
+        title: 'Applying the discipline',
+        mins: 8,
+        blocks: [
+          { t: 'p', x: 'The method that turns this domain from a list into a skill.' },
+          { t: 'num', items: [
+            'Inventory every non-record data store in the org: custom metadata types, custom settings types, custom permissions, files, report folders, dashboard folders, list views, Big Objects, external objects, and anything held in a static resource or a custom setting.',
+            'For each, state who can read it, who can change it, and whether either of those is intentional.',
+            'Identify every store where a value could be sensitive, and check whether it is committed to a repository, a log or an export.',
+            'For every report, dashboard and list view shared beyond its owner, state the identity it runs as.',
+            'For every file sharing independent of its parent record, justify it or remove it.',
+            'Record the whole inventory as an artifact, and schedule a review — this surface changes whenever someone adds a report.'
+          ]},
+          { t: 'callout', kind: 'tip', x: 'Step four is the highest-yield. The identity a report runs as determines its results, and that identity is invisible to the people receiving the report. A folder-wide review of report run-as settings is one hour of work and regularly finds an over-privileged report owner.' },
+          { t: 'p', x: 'And the general principle to carry into the other domains: access control has more surfaces than the record model, and the ones that are not records are the ones nobody reviews. An access model that has only been designed at the record level is incomplete, and this domain is where the incompleteness shows up.' },
+          {
+            t: 'ex',
+            id: '17.1',
+            title: 'Inventory the non-record surface',
+            obj: 'Produce a complete inventory of every non-record data store in the scenario org, with read and change access stated for each.',
+            stars: 3,
+            steps: [
+              'Enumerate custom metadata types, custom settings types, custom permissions, file stores, report and dashboard folders, saved list views, and Big or External Objects.',
+              'For each, record who can read it and who can change it, and whether that is intentional.',
+              'Identify every store holding a potentially sensitive value, and note whether it is committed to a repository or exported.',
+              'Find any secret held in custom metadata or a static resource and record it as a finding.',
+              'For every report shared beyond its owner, record the identity it runs as.'
+            ],
+            verify: 'A complete inventory with read and change access per store, every secret-exposure finding recorded, and a run-as list for every shared report.'
+          },
+          {
+            t: 'ex',
+            id: '17.2',
+            title: 'Fix the custom settings design',
+            obj: 'Choose the correct visibility option for four custom settings use cases, and justify each, including the inheritance implications.',
+            stars: 3,
+            steps: [
+              'Take four Vantage uses: a default queue per user, a page size by role, approval thresholds by role, and a genuinely global feature flag.',
+              'For each, choose $USER Global, $USER Profile, $User Hierarchical or System Default.',
+              'For each, state who inherits a value set by another user. This is the part people skip.',
+              'Decide the access model for the underlying object: who can read the settings, who can edit them, and whether editing is scoped.',
+              'State what happens to the setting if a user changes profile or role, and whether that is acceptable.'
+            ],
+            verify: 'Four justified choices, inheritance stated for each, an access model for the underlying object, and an explicit answer on what happens when a user’s profile or role changes.'
+          },
+          {
+            t: 'ex',
+            id: '17.3',
+            title: 'Review the report and file surface',
+            obj: 'Audit every shared report, dashboard and independently shared file, and produce the findings.',
+            stars: 4,
+            steps: [
+              'List every report and dashboard shared to a folder or to a user other than its owner.',
+              'For each, record the run-as identity and compare it to what the recipients’ own access would produce. Any difference is a finding.',
+              'List every file shared independently of its parent record, and check whether the content is PHI or contains member data.',
+              'For each finding, decide: restrict the sharing, change the run-as identity, or accept with a documented reason.',
+              'Write the review process that would keep this surface clean — who owns it, how often it is reviewed, and what triggers an immediate review.'
+            ],
+            verify: 'A complete list of shared reports with run-as identities, at least one run-as difference found, every independently shared file assessed, and a named review process with a cadence.'
+          },
+          { t: 'selfcheck', q: 'A report in a shared folder returns data a recipient could not query directly. Is that a bug?', a: 'No, it is expected behaviour — the report runs as its owner unless run-as is specified, so the results reflect the owner’s access. It is a deliberate disclosure surface. The questions to answer are whether the report owner needs that level of access for the report’s purpose, and whether the report should run as the viewer instead. Both are legitimate designs; neither should be accidental.' }
+        ]
+      }
+    ],
+    quiz: {
+      title: 'Phase 17 Quiz · Non-Record Data',
+      mins: 6,
+      questions: [
+        {
+          q: 'Which is NOT a type of non-record data?',
+          opts: ['Custom metadata', 'Custom settings', 'Member__c', 'Custom permissions'],
+          a: 2,
+          why: 'Member__c is a custom object, and its records are record data. Everything else on the list is non-record data or non-record configuration.'
+        },
+        {
+          q: 'Custom settings are records of a custom object you cannot see in the object manager. Consequence?',
+          opts: ['They cannot have sharing rules', 'The full access model applies to them, including a visibility hierarchy', 'They are encrypted by default', 'They are read-only for Apex'],
+          a: 1,
+          why: 'They are real objects, so sharing rules and Apex managed sharing work on them, and they support a visibility hierarchy of $USER Global, $USER Profile, $User Hierarchical and System Default.'
+        },
+        {
+          q: 'What does $User Hierarchical mean?',
+          opts: ['Users with the same profile', 'Users with the same profile and role, plus subordinates in the hierarchy — so a value set by a manager is readable by their reports', 'All internal users', 'Users in the same territory'],
+          a: 1,
+          why: 'It creates an implicit information flow down the org chart. Choose it deliberately and document who inherits a value.'
+        },
+        {
+          q: 'Why is custom metadata a poor place to store a secret?',
+          opts: ['It is encrypted automatically but unreadable', 'It is not user-editable but is readable by anyone with metadata API access and is committed to the repository in plaintext', 'It cannot store strings', 'It requires Shield'],
+          a: 1,
+          why: 'The risk is not user tampering but exposure — through API access and through the repository. Use a protected custom setting or Salesforce’s secrets facilities.'
+        },
+        {
+          q: 'What is a custom permission used for?',
+          opts: ['Granting object CRUD', 'A named capability that can be assigned to profiles, permission sets and PSGs, and referenced in formulas, flows and Apex', 'Creating a sharing rule', 'Defining a licence'],
+          a: 1,
+          why: 'It expresses a capability that does not map to an object permission — for example "may view masked SSN" — and it pairs cleanly with field masking entitlements.'
+        },
+        {
+          q: 'A report in a shared folder returns data a recipient could not query. Why?',
+          opts: ['A bug in FLS', 'The report runs as its owner unless run-as is specified, so results reflect the owner’s access', 'The recipient’s session has expired', 'Reports bypass object permissions'],
+          a: 1,
+          why: 'It is expected behaviour and a real disclosure surface. Decide deliberately whether the owner needs that access for the report’s purpose and whether run-as the viewer would be better.'
+        },
+        {
+          q: 'What is the most common PHI finding involving files?',
+          opts: ['A file attached to a record the user cannot see', 'A file containing member data shared independently of its parent record, so it escapes the record’s protections', 'A file with the wrong extension', 'A file exceeding the size limit'],
+          a: 1,
+          why: 'File access is separate from record access. The rule should be that files containing member data inherit their parent’s access, enforced by review and by not sharing files independently.'
+        },
+        {
+          q: 'Does a custom setting change record access?',
+          opts: ['Yes, it applies directly', 'No — it is configuration read by formulas and Apex; it can inform a decision but does not grant access itself'],
+          a: 1,
+          why: 'A custom setting cannot grant access. If Apex reads it to decide whether to share, then the setting’s edit access is as sensitive as the code, and it is invisible in record-level access reviews.'
+        },
+        {
+          q: 'What does Profile Filtering enforcement from Winter ’27 change about Setup?',
+          opts: ['It grants users additional Setup features', 'It enforces which profile features are available, so an unentitled user cannot see the Setup menu rather than seeing it and being refused'],
+          a: 1,
+          why: 'It converts a navigational control into an enforced one — the pattern of moving control from configuration to runtime.'
+        },
+        {
+          q: 'Big Objects differ from standard objects in access terms because:',
+          opts: ['They are not encrypted', 'They have separate permissions and a deliberately restricted set of operations'],
+          a: 1,
+          why: 'They are a distinct access-controlled surface — and also the correct answer when a design is straining against data volume rather than against permissions.'
+        },
+        {
+          q: 'Which step of the non-record audit yields the most findings?',
+          opts: ['Listing custom metadata types', 'Reviewing the run-as identity of every shared report and dashboard', 'Counting custom permissions', 'Checking the OWD'],
+          a: 1,
+          why: 'The run-as identity determines a report’s results and is invisible to the recipients. One hour regularly finds an over-privileged report owner.'
+        },
+        {
+          q: 'Why does an access model designed only at the record level remain incomplete?',
+          opts: ['It is slower to build', 'Access control has more surfaces than the record model — settings, metadata, files, reports, dashboards, list views — and those are the ones nobody reviews'],
+          a: 1,
+          why: 'The non-record surfaces are the unreviewed ones. This domain is where a record-only design shows its gaps.'
+        }
+      ]
+    }
+  },
+  /* ─────────────────────────── PHASE 18 ─────────────────────────── */
+  {
+    id: 'enforcementwave',
+    n: 18,
+    title: 'The Enforcement Wave',
+    icon: '🌊',
+    color: '#0D9488',
+    exam: 'implications',
+    tagline: 'Planning a security change that will remove access people currently have',
+    guide: '18-Enforcement-Wave.md',
+    art: [
+      { label: 'Wave plan', href: 'docs/architecture/enforcement-wave-plan.md' },
+      { label: 'Impact register', href: 'docs/architecture/enforcement-impact-register.md' }
+    ],
+    objectives: [
+      'Produce a sequenced enforcement wave with impact analysis, testing and comms, as a reusable method',
+      'Identify the changes that remove access rather than add it, and handle those differently',
+      'Explain why enforcement changes break code, and plan for that specifically',
+      'Write the rollback position honestly, including the changes you cannot roll back'
+    ],
+    lessons: [
+      {
+        title: 'Why an enforcement change is its own discipline',
+        mins: 8,
+        blocks: [
+          { t: 'p', x: 'Almost every security change you have made so far adds access or fixes a gap. An enforcement change is different: it removes access from users who have it today, including users who did nothing wrong and workflows that were built on the leniency you are removing.' },
+          { t: 'callout', kind: 'warn', x: 'That is why enforcement changes fail operationally even when they are correct technically. Users experience the change as something being taken away, with no error message explaining why. The technical work is the easy part; the impact analysis, the sequencing and the communication are the work.' },
+          { t: 'h', x: 'The Vantage wave, in one view' },
+          { t: 'table', head: ['Change', 'Removes access?', 'Who feels it'], rows: [
+            ['Apex classes migrated to user mode', 'Sometimes', 'Users whose operations relied on privilege; integrators whose jobs now fail'],
+            ['Profile Filtering enforcement', 'Yes, org-wide', 'Everyone who could see Setup features they should not have'],
+            ['Guest field-level access control', 'Possibly', 'External users whose pages lose fields'],
+            ['Field masking enforcement', 'No, but obscures', 'Users who need the value and lack the entitlement'],
+            ['User Access Policies replacing direct assignment', 'Yes, where untidy', 'Users whose permissions came from an unmanaged source'],
+            ['Restriction rules', 'Yes', 'Anyone relying on declarative access you are now excluding'],
+            ['OWD tightening', 'Yes', 'Users relying on default access']
+          ]},
+          { t: 'callout', kind: 'tip', x: 'Read the "removes access" column as a planning aid rather than a prediction. The changes most likely to hurt are the ones where the answer is "yes" and the user has no idea why — Profile Filtering and User Access Policies both qualify, because neither surfaces an error at the moment of the change.' }
+        ]
+      },
+      {
+        title: 'Impact analysis, done properly',
+        mins: 10,
+        blocks: [
+          { t: 'p', x: 'The question is not "who will this affect" in the abstract. It is "who will attempt something on the day after the change that will now fail, and what will they do instead".' },
+          { t: 'num', items: [
+            'Enumerate every entry point into the behaviour being changed: every Apex class invoked from a flow, every flow entry criterion, every button, every scheduled job, every integration endpoint, every report that calls the code indirectly.',
+            'For each entry point, determine who can reach it, under which permissions, and in which mode.',
+            'Identify every case where the change alters the outcome — the user with View All whose report now respects sharing, the flow that could no longer write a field, the batch job that now fails on a record the user cannot see.',
+            'Classify each as: broken and the behaviour was wrong; broken and the behaviour was needed; or slower or different but still functional.',
+            'For the second category, decide the remedy: grant a named permission, switch the operation to system mode with a justification, redesign the workflow, or accept the loss.',
+            'Estimate the volume of affected transactions per persona, so you can judge whether this is a support incident or a background irritation.'
+          ]},
+          { t: 'table', head: ['Category', 'Meaning', 'Response'], rows: [
+            ['Broken, behaviour was wrong', 'The change fixes a defect', 'No action beyond noting the volume'],
+            ['Broken, behaviour was needed', 'A real workflow depended on leniency', 'Named remedy per case, before the change'],
+            ['Different but functional', 'Slower, or requiring an extra step', 'User documentation, and a template or automation to reduce the step']
+          ]},
+          { t: 'callout', kind: 'warn', x: 'The most commonly missed entry point is the indirect one: code invoked by a flow, which is invoked by a report refresh, which is invoked by a scheduled dashboard email. Following the call graph by hand misses these. Where the impact analysis is large, use a static analysis tool to enumerate the Apex call graph — it is faster and it finds the paths you would not have thought of.' }
+        ]
+      },
+      {
+        title: 'Sequencing, testing and the comms plan',
+        mins: 9,
+        blocks: [
+          { t: 'p', x: 'A defensible order for a wave of several changes is by increasing blast radius and increasing difficulty of rollback.' },
+          { t: 'table', head: ['Order', 'Change type', 'Rationale'], rows: [
+            ['First', 'Changes affecting one role, one integration or one object', 'Small blast radius, and you learn the process safely'],
+            ['Then', 'Field-level enforcement on a restricted object', 'Narrow, testable, and reversible by FLS'],
+            ['Then', 'Guest field-level access control', 'Externally visible, so it needs its own verification and a support path'],
+            ['Then', 'Apex user-mode migration per module', 'Difficult to reverse cleanly, and requires code changes'],
+            ['Last', 'Profile Filtering enforcement', 'Org-wide, everyone affected, and hardest to communicate precisely']
+          ]},
+          { t: 'h', x: 'Testing an enforcement change' },
+          { t: 'p', x: 'Reuse the verification matrix from Phase 16 and add three things specific to enforcement:' },
+          { t: 'list', items: [
+            'Regression testing of the code paths, not just the access checks — enforcement changes behaviour, not only visibility.',
+            'Testing in the transitional state, where access is inconsistent during recalculation, so support knows what to expect.',
+            'A deliberate attempt to find something the change should have prevented. If you cannot break it, the test is not trying.'
+          ]},
+          { t: 'h', x: 'The comms plan, written before the change' },
+          { t: 'p', x: 'Four things every affected user needs, in this order: what is changing and when; what you will no longer be able to do, named specifically; what to do instead, with the exact path; and who to contact. The failure mode is a message saying "enhanced security measures are being applied", which generates support tickets and no cooperation.' },
+          { t: 'callout', kind: 'tip', x: 'The most effective single communication is a before-and-after screenshot or a two-column table: "before, you could see the SSN field on the member record; after, you can see that it is populated but the value is masked, and here is how to request the entitlement". Concrete and short beats comprehensive and vague.' }
+        ]
+      },
+      {
+        title: 'Rollback, honestly',
+        mins: 8,
+        blocks: [
+          { t: 'p', x: 'Every wave needs a rollback plan, and the honest version distinguishes three categories rather than promising reversibility.' },
+          { t: 'table', head: ['Category', 'Rollback', 'Note'], rows: [
+            ['FLS or permission changes', 'Fully reversible', 'Takes effect at next session; the safest thing to change first'],
+            ['Apex mode declarations', 'Reversible by redeploy', 'Reversing restores the leniency, including its risk'],
+            ['Sharing rules, OWD, restriction rules', 'Rollback is another recalculation', 'Expensive and slow; plan for it, do not rely on it'],
+            ['Manual shares deleted as part of the wave', 'Not recoverable without re-creation', 'Snapshot before deleting anything'],
+            ['Field masking applied', 'Reversible', 'But re-masking masks data that users may have already copied out'],
+            ['Permissions removed', 'Not reversible if the data was destroyed', 'No enforcement change should destroy data — verify none does'],
+            ['Profile Filtering enforced', 'Reversible', 'But users may have built workarounds in the interim']
+          ]},
+          { t: 'callout', kind: 'warn', x: 'Two rows are irreversible in practice. Deleted manual shares need re-creation from your records, so snapshot first. And any change where a user could copy a value before it became masked has already moved that data outside your control — rollback does not bring it back. That asymmetry is the strongest argument for masking before removing, rather than removing before masking.' },
+          { t: 'p', x: 'The genuine conclusion to write into the plan: for a large enforcement wave, decide in advance which change you will not roll back under any circumstances, because reverting is more damaging than continuing. Naming that one change in advance is what stops a panic-driven rollback on day two.' },
+          {
+            t: 'ex',
+            id: '18.1',
+            title: 'Plan the full Vantage enforcement wave',
+            obj: 'Produce the complete wave plan: seven changes, sequenced, with impact analysis, test plan, comms and rollback position.',
+            stars: 4,
+            steps: [
+              'Take the seven changes from the lesson table and scope each one to Vantage: which objects, which personas, which code.',
+              'Order them by increasing blast radius and rollback difficulty. Justify each position.',
+              'For each, run the impact analysis: entry points, who reaches them, what breaks, and the remedy for each break.',
+              'Write the test plan per change, including the transitional-state tests and one deliberate break attempt.',
+              'Write the comms plan per change, with the four required elements and a concrete before-and-after example.',
+              'Write the rollback position, naming the one change you would not roll back and why.'
+            ],
+            verify: 'Seven scoped changes in a defensible order, impact analysis with remedies for every break, a test and comms plan per change, and an explicit no-rollback decision.'
+          },
+          {
+            t: 'ex',
+            id: '18.2',
+            title: 'Find the entry points nobody documents',
+            obj: 'Map the full call graph into a behaviour being enforced, and identify the indirect paths that a manual review misses.',
+            stars: 4,
+            steps: [
+              'Choose an Apex class in your codebase that a user-facing action invokes indirectly — through a flow, a scheduled job or a batch.',
+              'Trace every path to it: direct invocation, flow entry criteria, scheduled execution, batch chaining, integration endpoints, invocable actions.',
+              'For each path, record the calling identity, the mode, and what the enforcement change does to it.',
+              'Identify at least one path you did not expect. There is almost always one.',
+              'Produce the call graph as an artifact, and state which paths your original impact analysis had missed.'
+            ],
+            verify: 'A complete call graph artifact, at least one unexpected path found, and an honest statement of what the manual analysis missed. Use static analysis where the graph is large.'
+          },
+          {
+            t: 'ex',
+            id: '18.3',
+            title: 'Write the comms and the rollback position',
+            obj: 'Produce the two documents that decide whether the wave succeeds operationally, and test them against a skeptical reader.',
+            stars: 3,
+            steps: [
+              'Write the user communication for one change with all four required elements: what and when, what you lose, what to do instead, who to contact.',
+              'Include a concrete before-and-after example. Remove any sentence that could be read as vague.',
+              'Write the rollback position covering all three reversibility categories, and name the one change you would not roll back.',
+              'Identify which changes require a snapshot of current state before proceeding, and specify what.',
+              'Give both documents to someone outside the project. Ask them to tell you what they would do on the day after the change. Fix whatever they cannot answer.'
+            ],
+            verify: 'A communication a reader outside the project can act on without asking a question, a rollback position covering every change, a snapshot list, and no ambiguity in either document.'
+          },
+          { t: 'selfcheck', q: 'Profile Filtering enforcement is scheduled for Friday. Three users say they cannot find Setup features they used. What is the correct response?', a: 'That is the expected effect, not a fault — the change worked. The correct response is to check whether those features should be available to them by design; if yes, they need the permission through a permission set rather than through profile features, and if no, their recent reliance on those features was itself the finding. What you must not do is disable the enforcement to restore the navigation. And this is exactly why the comms plan names the specific features affected, so that support can answer on Friday without escalating to you.' }
+        ]
+      }
+    ],
+    quiz: {
+      title: 'Phase 18 Quiz · The Enforcement Wave',
+      mins: 6,
+      questions: [
+        {
+          q: 'What makes an enforcement change different from most security changes?',
+          opts: ['It is harder to configure', 'It removes access from users who have it today, and breaks workflows built on the leniency being removed'],
+          a: 1,
+          why: 'That is why enforcement changes fail operationally even when technically correct. Users experience removal, with no error explaining why.'
+        },
+        {
+          q: 'Which enforcement change should come last in a wave?',
+          opts: ['Field masking on one object', 'Apex user-mode migration for one module', 'Profile Filtering enforcement', 'Guest field-level access control'],
+          a: 2,
+          why: 'Profile Filtering is org-wide, everyone is affected, and it is hardest to communicate precisely. Sequence by increasing blast radius and rollback difficulty.'
+        },
+        {
+          q: 'Which impact-analysis entry point is most commonly missed?',
+          opts: ['Apex invoked directly by a button', 'A flow that invokes Apex that is invoked by a scheduled report or dashboard refresh'],
+          a: 1,
+          why: 'Indirect call paths. Following the call graph by hand misses them; use static analysis where the graph is large.'
+        },
+        {
+          q: 'A workflow breaks after an enforcement change and the behaviour was genuinely needed. What is the response?',
+          opts: ['Disable the enforcement', 'Grant a named permission, switch the operation to system mode with justification, redesign the workflow, or accept the loss — decided per case before the change'],
+          a: 1,
+          why: 'The remedy is a decision, taken in advance with a named owner. Disabling the enforcement undoes the work and the risk.'
+        },
+        {
+          q: 'Which change is fully reversible with no recalculation?',
+          opts: ['An OWD change', 'An FLS change', 'A role hierarchy change', 'Adding a restriction rule'],
+          a: 1,
+          why: 'FLS and permission changes are reversible and take effect at next session. That reversibility is why they belong early in a wave.'
+        },
+        {
+          q: 'Which rollback is not genuinely recoverable?',
+          opts: ['An FLS change', 'Manual shares deleted as part of the wave', 'Reverting an Apex mode declaration', 'Removing a permission set assignment'],
+          a: 1,
+          why: 'Deleted manual shares need re-creation from your records. Snapshot before deleting anything.'
+        },
+        {
+          q: 'Why is masking preferable to removing access before a value becomes unreadable?',
+          opts: ['Masking is cheaper', 'Because a user who could read a value may have copied it out already, and rollback cannot bring that back'],
+          a: 1,
+          why: 'That asymmetry is irreversible in practice. Mask first, then remove, so the data never leaves your control.'
+        },
+        {
+          q: 'A user reports they cannot find a Setup feature after Profile Filtering enforcement. What is correct?',
+          opts: ['Disable the enforcement temporarily', 'The change worked; determine whether the feature should be available to them by design and grant it via a permission set if so'],
+          a: 1,
+          why: 'This is the expected effect. The remedy is a permission, not a reversal — and it is why the comms plan must name the specific features affected.'
+        },
+        {
+          q: 'What are the four elements every affected user needs in a comms plan?',
+          opts: ['Scope, timeline, owner, cost', 'What is changing and when, what you will no longer be able to do, what to do instead, and who to contact'],
+          a: 1,
+          why: 'Named specifically. "Enhanced security measures are being applied" generates support tickets and no cooperation.'
+        },
+        {
+          q: 'What makes an enforcement comms message effective?',
+          opts: ['Comprehensive coverage of every change', 'A concrete before-and-after example with the exact alternative path'],
+          a: 1,
+          why: 'Concrete and short beats comprehensive and vague. A two-column table of before and after with the new path is the most effective single artifact.'
+        },
+        {
+          q: 'Why should you name in advance the one change you would not roll back?',
+          opts: ['To satisfy governance', 'Because a panic-driven rollback on day two is more damaging than continuing, and deciding in advance prevents it'],
+          a: 1,
+          why: 'Reversibility is not symmetric across changes. Naming the irreversible one in advance stops an improvised reversal.'
+        },
+        {
+          q: 'What should you test that is specific to an enforcement change, beyond the access matrix?',
+          opts: ['Only the access matrix', 'Regression of the code paths, the transitional state during recalculation, and a deliberate attempt to find something the change should have prevented'],
+          a: 1,
+          why: 'Enforcement changes behaviour, not only visibility. And if you cannot break it, the test is not trying.'
+        }
+      ]
+    }
+  },
+  /* ─────────────────────────── PHASE 19 ─────────────────────────── */
+  {
+    id: 'newboundaries',
+    n: 19,
+    title: 'New Boundaries: Policies, Enhanced Sharing & Identity',
+    icon: '🧱',
+    color: '#9333EA',
+    exam: 'delta',
+    tagline: 'The release-delta layer — what changed that your existing model must now answer to',
+    guide: '19-New-Boundaries.md',
+    art: [
+      { label: 'Release delta matrix', href: 'docs/architecture/release-delta-matrix.md' },
+      { label: 'User access policy definitions', href: 'force-app/main/default/policies/' }
+    ],
+    objectives: [
+      'Explain User Access Policies and how policy-driven permission assignment differs from direct assignment',
+      'Summarise the sharing and identity enhancements across recent releases and their architectural effect',
+      'State what the Agentforce, Data 360 and MCP surfaces mean for an access model',
+      'Judge which release changes are material to an existing design and which are not'
+    ],
+    lessons: [
+      {
+        title: 'User Access Policies: assignment by policy',
+        mins: 9,
+        blocks: [
+          { t: 'p', x: 'A User Access Policy assigns permissions by policy rather than by direct assignment. The change is not that permissions work differently — it is that where they come from changes, and with it what can be guaranteed about them.' },
+          { t: 'table', head: ['', 'Direct assignment', 'User Access Policy'], rows: [
+            ['Who may assign', 'An admin with the permission', 'A policy owner, within the policy’s scope'],
+            ['What is guaranteed', 'Nothing — it can be assigned and never removed', 'The policy governs; direct assignment outside the policy does not produce the same state'],
+            ['Audit', 'Requires a report to discover who has what', 'The policy is the record of intent'],
+            ['Change control', 'Depends on process discipline', 'Governed by the policy’s scope and ownership'],
+            ['Combination with PSGs', 'Union', 'Still union; the policy is the source, not the combinator']
+          ]},
+          { t: 'callout', kind: 'warn', x: 'The architectural argument is the third row. In a direct-assignment model, the authoritative record of who should have access does not exist anywhere in the org — it exists in someone’s head, and every access review is a reconstruction. A policy makes the intent explicit and machine-readable, which is the difference between an access model you can reason about and one you can only observe.' },
+          { t: 'p', x: 'For the exam, keep the mechanics simple: policies control which permission sets or permission set groups may be assigned, and they do not create a new permission primitive. They still union with everything else the user has, and they do not interact with sharing.' },
+          { t: 'h', x: 'The migration consideration' },
+          { t: 'p', x: 'Adopting policies means deciding which existing assignments are legitimate and which are historical accidents. The finding from exercise 10.3 — unattributed permission sets — becomes the migration worklist, because a policy can only govern assignments you are willing to describe.' },
+          { t: 'selfcheck', q: 'Does adopting User Access Policies stop an admin with the permission from assigning a permission set directly?', a: 'No, and this matters for your design. Policies govern the assignments within their scope; they do not remove the admin’s ability to assign outside it. So the benefit is a governed path with a record of intent, not a technical prohibition. If you need a hard boundary, that comes from the admin permission itself, or from an enforcement mechanism — not from the policy.' }
+        ]
+      },
+      {
+        title: 'Sharing enhancements across recent releases',
+        mins: 9,
+        blocks: [
+          { t: 'p', x: 'The sharing-relevant changes from Winter ’25 through Winter ’27, and what each means for an existing model.' },
+          { t: 'table', head: ['Release', 'Change', 'Architectural effect'], rows: [
+            ['Winter ’25', 'Enhanced sharing and assignment capabilities; more flexibility in standard sharing configuration', 'Some requirements previously needing Apex became declarative — worth re-examining old Apex for removable code'],
+            ['Winter ’25', 'User Access Policies', 'Assignment by policy; intent becomes machine-readable'],
+            ['Winter ’25 onwards', 'Guest user licensing changes in Experience Cloud', 'The external model must be chosen with licensing in view, not bolted on later'],
+            ['Summer ’26', 'Apex user mode by default; sharing-aware with sharing; removal of WITH SECURITY_ENFORCED; triggers remain system mode', 'Undeclared code becomes safer; declared system mode becomes the audit list; flows stay system mode'],
+            ['Summer ’26', 'More records per external sharing object; external account hierarchy improvements', 'Broader external models become practical'],
+            ['Spring ’27', 'Asynchronous sharing recalculation', 'Recalculation becomes a monitorable job with a longer transitional state'],
+            ['Winter ’27', 'Manual share retention toggle', 'Gives you an explicit choice about the lifecycle of manual shares — an answer to the Phase 8 problem'],
+            ['Winter ’27', 'Profile Filtering enforcement', 'Setup access enforced rather than merely navigational'],
+            ['Winter ’27', 'Guest field-level access control; field masking', 'Field-level confidentiality becomes enforceable, including for external traffic']
+          ]},
+          { t: 'callout', kind: 'tip', x: 'The pattern across all of it is one-directional: enforcement is moving from configuration into the runtime. User mode, async recalculation with monitoring, Profile Filtering enforcement, guest FLS enforcement and masking all share that shape. An architect reading the roadmap should draw one conclusion from it — declarative and enforced mechanisms are becoming safer assumptions over time, and ad-hoc workarounds are becoming the residual risk.' },
+          { t: 'p', x: 'The practical exercise for an existing org is a re-examination rather than a rewrite. Any Apex you wrote to work around a declarative limitation should be re-tested against the current feature set: some of it is now removable, which reduces the audit surface immediately.' }
+        ]
+      },
+      {
+        title: 'Agentforce, Data 360 and the action surface',
+        mins: 9,
+        blocks: [
+          { t: 'p', x: 'The newer surfaces change the access model because they act, and actions have a different risk profile than reads.' },
+          { t: 'table', head: ['Surface', 'The access question', 'Why it differs from a read'], rows: [
+            ['Agentforce actions', 'Which agent and which action may perform this operation', 'An action changes data, and the agent’s effective permissions are the boundary — not the user’s'],
+            ['Agentforce topics and objects', 'Which objects the agent may query', 'The agent is a new identity in the model with its own permissions'],
+            ['Data 360 and data sharing', 'Which segments and data sets are consumed', 'Data may leave the org, so consent and purpose become access questions'],
+            ['Model Context Protocol servers', 'Who may invoke the server, and what it may do', 'An external protocol surface: the tool is callable, so its authorisation must be explicit'],
+            ['External Einstein and analytics', 'Which data is exposed to which features', 'Exposure of aggregated or joined data can exceed what any single record shows']
+          ]},
+          { t: 'callout', kind: 'warn', x: 'The critical distinction: an AI agent does not act as the user. It acts as itself, with its own permissions, on behalf of whoever triggered it. So the question "can this user do this?" becomes "can this agent do this, and should this user be allowed to make it happen?" Those are two different checks and the second is the one that is easy to forget.' },
+          { t: 'p', x: 'For Data 360, the addition of consent as a first-class concept is genuinely useful to a security architect, because consent and access were previously independent concerns. If consent is enforced in the platform rather than in an integration, the class of leak where data is used outside its stated purpose becomes structurally harder rather than a matter of process.' },
+          { t: 'selfcheck', q: 'An agent can read every Member__c because its permissions were copied from a high-privilege integration user. Is that acceptable?', a: 'No, and the reasoning generalises. Agent permissions should be the minimum the agent’s actions require — typically read on the objects it reasons about and write only on the specific actions it performs. Permissions copied from an integration user are a copy-paste of privilege with no relationship to the agent’s purpose, and they make the agent a high-value target. Write the agent’s permission set from its action list, not from an existing user.' }
+        ]
+      },
+      {
+        title: 'Identity, and the dates that shape the design',
+        mins: 8,
+        blocks: [
+          { t: 'p', x: 'Two categories of change that constrain external and internal identity, and that a design must satisfy rather than merely consider.' },
+          { t: 'h', x: 'Enhanced external user identity' },
+          { t: 'p', x: 'External users increasingly authenticate through an identity provider rather than as contacts matched inside the org. The security consequence is precise and important: matching a session to a record becomes an identity problem, and any sharing design that assumed "the contact is looked up from the record" must now resolve identity explicitly.' },
+          { t: 'callout', kind: 'warn', x: 'The failure mode is silent. If the external identity cannot be resolved to the contact your sharing set rule expects, the rule matches nothing and the external user sees an empty portal — which is safe but reads as a broken feature. If resolution is wrong rather than absent, the user sees another person’s data. So identity resolution failure needs to be an explicit, logged, tested case, not an assumption.' },
+          { t: 'h', x: 'Compliance and attestation deadlines' },
+          { t: 'p', x: 'HIPAA Business Associate Agreement and other regulatory attestations are prerequisites for handling the relevant data, and they shape which features you may offer and how you must configure them. They are not an implementation detail to be closed at go-live; they constrain the design, and a design that assumes a feature is available without confirming the attestation is a plan that will slip.' },
+          { t: 'p', x: 'The practical discipline for the delta layer as a whole: for each change, ask three questions. Does it change what a user can reach? Does it change who enforces it — configuration or runtime? And does it change the operational cost of a change? A change that answers no to all three is a reading item. A change that answers yes to the third is a change-wave item. Most changes answer yes to the second, and those are the ones worth designing around.' }
+        ]
+      },
+      {
+        title: 'Deciding what is material',
+        mins: 7,
+        blocks: [
+          { t: 'p', x: 'Exam questions on new features are easy to over-answer. The discipline is to classify before you study details.' },
+          { t: 'table', head: ['Question', 'If yes'], rows: [
+            ['Does it change what a user can reach?', 'Material — it changes the model or its enforcement'],
+            ['Does it change the operational cost of a change?', 'Material — it belongs in the change wave plan'],
+            ['Does it change what you must audit?', 'Material — it changes your evidence model'],
+            ['Is it a new mechanism with no declarative equivalent?', 'Material only if it removes Apex you already have'],
+            ['Is it a convenience or a UI improvement?', 'Not material — a reading item'],
+            ['Does it only affect a feature you do not use?', 'Not material for your design']
+          ]},
+          { t: 'callout', kind: 'tip', x: 'The last two rows are where candidates lose marks by over-explaining. A confident two-sentence answer that correctly identifies a change as not material to the design is worth more than an accurate paragraph about a feature you do not have. Answer the question asked.' },
+          { t: 'p', x: 'For Vantage, the material set is short and worth stating explicitly: Apex user mode by default, the removal of WITH SECURITY_ENFORCED, asynchronous recalculation, User Access Policies, manual share retention, Profile Filtering enforcement, guest field-level access control, and field masking. Everything else on the roadmap is context.' },
+          {
+            t: 'ex',
+            id: '19.1',
+            title: 'Build the release delta matrix for Vantage',
+            obj: 'For each material change, state the effect on the existing model, the operational cost, and what you must do about it.',
+            stars: 4,
+            steps: [
+              'Take the changes from the lesson table. For each, classify as material or not to Vantage, using the three-question test.',
+              'For each material change, state the effect on the existing model: what becomes newly possible, newly enforced, or newly expensive.',
+              'State the operational cost: does a future change require a recalculation, a code change, a communication, or nothing.',
+              'Write the action: adopt now, plan for, monitor, or ignore with a reason.',
+              'For anything marked "removes the need for Apex", identify the Apex in your own design that becomes removable and estimate the audit-surface reduction.'
+            ],
+            verify: 'Every change classified with the reasoning shown, material changes with effect, cost and action stated, and at least one identified piece of removable Apex.'
+          },
+          {
+            t: 'ex',
+            id: '19.2',
+            title: 'Design the agent and data-sharing surface',
+            obj: 'Specify the permissions, actions and identity boundaries for an Agentforce surface and a Data 360 consumption path.',
+            stars: 4,
+            steps: [
+              'List the actions the agent must take, and nothing more. Start from the action list, not from an existing user’s permissions.',
+              'For each action, state the minimum object and field permissions required, and justify each.',
+              'Specify the agent’s identity: a named agent user or service identity, scoped, with a written justification for any elevated permission.',
+              'For Data 360, state which data is consumed, on what consent basis, and how consent is enforced rather than assumed.',
+              'Write the two checks a runtime must perform: can the agent perform this action, and should this user be able to trigger it. Explain where the second check lives.'
+            ],
+            verify: 'An action-led permission specification with per-action justification, a scoped identity, a stated consent enforcement mechanism, and both runtime checks identified with the second located explicitly.'
+          },
+          {
+            t: 'ex',
+            id: '19.3',
+            title: 'Re-test the external design against identity changes',
+            obj: 'Verify the Vantage external model still works when identity resolves through an external identity provider, and find the failure modes.',
+            stars: 4,
+            steps: [
+              'Map how the external identity resolves to the Contact record your sharing set rule depends on.',
+              'Test three resolution outcomes: correct contact resolved, no contact resolved, and wrong contact resolved.',
+              'For each, record what the external user sees, and whether the outcome is safe and observable.',
+              'For the unresolved case, determine whether the portal fails safely and whether the failure is logged and visible to support.',
+              'For the misresolved case, determine whether another person’s data could be returned, and if so, name the control that prevents it.'
+            ],
+            verify: 'A resolution map, three tested outcomes, a logged and safe unresolved path, and a named control preventing cross-user exposure in the misresolved case. If no control exists, that is the finding.'
+          },
+          { t: 'selfcheck', q: 'A release adds a feature that would let you delete a large body of Apex sharing code. What is the correct first step?', a: 'Verify the replacement is genuinely equivalent for your data model before deleting anything — particularly the parts your Apex handled that no declarative criterion could express, such as logic across related records or time-dependent grants. Then delete, because removable Apex is a direct reduction in audit surface and it is the most under-appreciated security improvement available. Do not delete first and discover the gap in production.' }
+        ]
+      }
+    ],
+    quiz: {
+      title: 'Phase 19 Quiz · New Boundaries & Release Delta',
+      mins: 7,
+      questions: [
+        {
+          q: 'What is the primary architectural benefit of User Access Policies?',
+          opts: ['They grant more access', 'Permissions are assigned by a policy, so the intent becomes an explicit, machine-readable record rather than something reconstructed during review'],
+          a: 0,
+          why: 'The guarantee is a governed path and a record of intent, not a new permission behaviour. Permissions still union with everything else the user has.'
+        },
+        {
+          q: 'Does adopting User Access Policies prevent an admin from assigning a permission set directly?',
+          opts: ['Yes, entirely', 'No — policies govern their own scope but do not remove the admin’s ability to assign outside it'],
+          a: 1,
+          why: 'A technical boundary comes from the admin permission itself or from enforcement, not from the policy. Do not rely on the policy to prevent.'
+        },
+        {
+          q: 'What is the Summer ’26 change to the Apex default mode?',
+          opts: ['System mode remains the default', 'User mode becomes the default for code that declares no mode, with triggers still system mode'],
+          a: 1,
+          why: 'And classes with an explicit declaration keep their behaviour, so existing code is unaffected — which is why auditing undeclared and system-mode classes is the actual task.'
+        },
+        {
+          q: 'Why is the removal of WITH SECURITY_ENFORCED significant?',
+          opts: ['It removes user mode', 'Code must migrate to user mode, which also enforces object permissions and therefore surfaces assumptions the old code was violating'],
+          a: 1,
+          why: 'The migration is more than a syntax change — it reveals access assumptions, which is why it is worth doing deliberately rather than mechanically.'
+        },
+        {
+          q: 'What does asynchronous sharing recalculation change operationally?',
+          opts: ['The OWD default', 'Recalculation becomes a monitorable background job, so the inconsistent-access window becomes longer and normal rather than exceptional'],
+          a: 1,
+          why: 'Which is why the runbook must treat recalculation as a job with a lifecycle: queued, running, verified, closed.'
+        },
+        {
+          q: 'An AI agent performs an action. Whose permissions govern it?',
+          opts: ['The triggering user’s', 'The agent’s own — so the check is whether the agent may act, and separately whether the user should be allowed to trigger it'],
+          a: 1,
+          why: 'Agents act as themselves, not as the user. Two distinct checks, and the second — should this user be able to make this happen — is the one that is easy to forget.'
+        },
+        {
+          q: 'What is wrong with copying an agent’s permissions from a high-privilege integration user?',
+          opts: ['Nothing, it saves time', 'It grants privilege with no relationship to the agent’s purpose and makes the agent a high-value target'],
+          a: 1,
+          why: 'Write the agent’s permission set from its action list, granting the minimum each action requires.'
+        },
+        {
+          q: 'What is the security consequence of external users authenticating through an identity provider rather than as matched contacts?',
+          opts: ['None', 'Session-to-record matching becomes an identity problem, and a failed or wrong resolution must be an explicit, logged, tested case'],
+          a: 1,
+          why: 'Failed resolution gives an empty portal — safe but looks broken. Wrong resolution can expose another person’s data. Both need handling, not assumption.'
+        },
+        {
+          q: 'Which change answers "not material" to your design under the three-question test?',
+          opts: ['Apex user mode becoming the default', 'A UI convenience improvement in a feature you do not use'],
+          a: 1,
+          why: 'It changes no reach, no enforcement source and no operational cost. A confident short answer that identifies it as immaterial is worth more than an accurate paragraph.'
+        },
+        {
+          q: 'What is the unifying direction across the recent release changes?',
+          opts: ['More configuration options', 'Enforcement is moving from configuration into the runtime, so declarative enforced mechanisms become safer assumptions over time'],
+          a: 1,
+          why: 'User mode, monitored recalculation, Profile Filtering enforcement, guest FLS and masking all share that shape, and it should shape how you write the design.'
+        },
+        {
+          q: 'What is the most under-appreciated security improvement available in the delta layer?',
+          opts: ['Enabling a new feature', 'Deleting Apex that a new declarative feature makes removable, which directly reduces the audit surface'],
+          a: 1,
+          why: 'Verify equivalence for your data model first — especially logic across related records — then delete. Doing it in that order matters.'
+        },
+        {
+          q: 'True or false: compliance attestations such as a HIPAA BAA are an implementation detail to close at go-live.',
+          opts: ['True', 'False — they constrain which features may be offered and how they must be configured, so they shape the design'],
+          a: 1,
+          why: 'A design that assumes a feature is available without confirming the attestation is a plan that will slip.'
+        }
+      ]
+    }
+  },
+  /* ─────────────────────────── PHASE 20 ─────────────────────────── */
+  {
+    id: 'capstone',
+    n: 20,
+    title: 'Capstone & Certification Prep',
+    icon: '🎓',
+    color: '#B91C1C',
+    exam: 'capstone',
+    tagline: 'Design the whole model, then practise the question format',
+    guide: '20-Capstone-Cert-Prep.md',
+    art: [
+      { label: 'Full Vantage access model', href: 'docs/architecture/vantage-access-model.md' },
+      { label: 'Capstone design template', href: 'docs/architecture/capstone-template.md' },
+      { label: 'Exam strategy notes', href: 'docs/architecture/exam-strategy.md' }
+    ],
+    objectives: [
+      'Design a complete access model for a multi-subsidiary healthcare org and defend every choice',
+      'Answer the exam’s characteristic question types correctly and quickly',
+      'Recognise the traps that account for most lost marks, and neutralise each one',
+      'Plan the final revision on evidence from your own practice data'
+    ],
+    lessons: [
+      {
+        title: 'The capstone, and what "complete" means',
+        mins: 8,
+        blocks: [
+          { t: 'p', x: 'The capstone is a design, not a configuration. Its value is that it forces you to hold the whole model at once, which is exactly what scenario questions require and exactly what phase-by-phase learning does not.' },
+          { t: 'table', head: ['Component', 'What it must contain', 'Why it is examinable'], rows: [
+            ['Data model', 'The five objects, their relationships and the ownership rules', 'Phase 6 — the relationship decisions drive everything else'],
+            ['OWD per object', 'Justified, with the recalculation plan', 'Phase 2 — the most consequential single setting'],
+            ['Role hierarchy', 'Its shape and what it deliberately does not cover', 'Phase 3'],
+            ['Sharing rules', 'Criteria, targets, and the match counts', 'Phase 4'],
+            ['Groups, queues, teams', 'Each requirement mapped to the right target type', 'Phases 4 and 5'],
+            ['Apex managed sharing', 'Only where declarative fails, with revocation and reconciliation', 'Phase 7'],
+            ['Permissions and FLS', 'Per job function, from the sensitivity matrix', 'Phases 10 to 12'],
+            ['Sensitive data plan', 'Encryption mode, access layers, residual risk', 'Phase 13'],
+            ['External model', 'Personas, mechanisms, the verification plan', 'Phase 9'],
+            ['Non-record surface', 'Settings, reports, files', 'Phase 17'],
+            ['Performance and change plan', 'Skew analysis, change wave, rollback', 'Phases 15 and 18'],
+            ['Evidence', 'How each control is demonstrated to an auditor', 'Phase 13']
+          ]},
+          { t: 'callout', kind: 'warn', x: 'The two components candidates most often omit are the residual risk section and the evidence section. They are also the two that distinguish a technically correct design from one a compliance officer can accept, and the exam rewards the same instinct — a scenario answer that acknowledges what your design does not protect against is a stronger answer than one that claims completeness.' }
+        ]
+      },
+      {
+        title: 'Question types, and how to read them',
+        mins: 10,
+        blocks: [
+          { t: 'p', x: 'Scenario questions have recognisable shapes, and recognising the shape tells you which mechanism to reach for before you have finished reading.' },
+          { t: 'table', head: ['Question shape', 'The mechanism it is usually asking for', 'Trap'], rows: [
+            ['"Two managers who do not report to each other need access"', 'Group plus criteria-based rule', 'Creating a new reporting line'],
+            ['"Only records matching a condition"', 'Criteria-based rule', 'Object-based rule, or Apex'],
+            ['"Everyone except this one role"', 'Restriction rule, or a permission set group for fields', 'Assuming sharing rules can subtract'],
+            ['"Access follows a relationship, no criteria"', 'Teams, or an account team', 'A sharing rule targeting a group'],
+            ['"Conditional on another record being active"', 'Apex managed sharing', 'A field-based criteria rule that cannot express it'],
+            ['"External users see their own records"', 'Sharing set rule', 'Role hierarchy, or manual sharing'],
+            ['"A specific, temporary exception"', 'Manual share, or a time-bound Apex grant', 'Building a permanent mechanism for it'],
+            ['"They can see the record but not the field"', 'FLS, or masking', 'Sharing rules, which do not affect fields'],
+            ['"This change is expensive"', 'A permission-based alternative', 'Raising the org limits'],
+            ['"The code bypasses permissions"', 'User mode', 'Assuming the declared keyword is what runs']
+          ]},
+          { t: 'callout', kind: 'tip', x: 'Read the requirement, not the mechanism. Scenario questions often describe a mechanism implicitly — "they report to them" is the role hierarchy, "they need to see them" is not. Identify the relationship the requirement asserts, and the mechanism follows.' },
+          { t: 'h', x: 'The five options you should rule out first' },
+          { t: 'list', items: [
+            'Creating a fake reporting line to make the hierarchy work. It over-grants and it corrupts the org chart.',
+            'Reaching for Apex when a declarative mechanism suffices. It adds an invisible, unaudited behaviour.',
+            'Using View All or Modify All to solve a scoping problem. It removes sharing as a boundary for that user.',
+            'Treating a page layout as a security control. It is presentation, and the API bypasses it.',
+            'Assuming sharing rules can subtract. They cannot, except via restriction rules.'
+          ]},
+          { t: 'selfcheck', q: 'A question says "clinical staff need access to records belonging to the clinician they report to, but not to the clinician’s manager". Which mechanism, and why is it hard?', a: 'The first half is the role hierarchy. The second half is not, because nothing propagates downward — and the hierarchy cannot express an exception for a specific individual. So the honest answer involves a mechanism outside the hierarchy: either a permission set group excluding the manager from the relevant field or object, a restriction rule targeting records owned by that manager’s role, or an Apex grant that computes it. This is the shape of question that separates a candidate who knows the mechanisms from one who knows the hierarchy.' }
+        ]
+      },
+      {
+        title: 'The traps that cost marks',
+        mins: 9,
+        blocks: [
+          { t: 'p', x: 'A short list of specific, high-frequency errors, each with the correction.' },
+          { t: 'table', head: ['The trap', 'The error it induces', 'The correction'], rows: [
+            ['Sharing adds', 'Assuming a rule can remove access', 'Only restriction rules subtract, and only from declarative sources'],
+            ['Owner-based access is implicit', 'Forgetting it when analysing who sees a record', 'The owner always has access, regardless of OWD'],
+            ['Roles cascade down', 'Assuming a manager’s reports get the manager’s grants', 'Upward only'],
+            ['Queues are rule targets', 'Offering a queue as the answer', 'Not valid for criteria-based rules'],
+            ['Criteria union', 'Reading "and" where the question means a union of record sets', 'Within a rule, criteria select record sets and union'],
+            ['Encrypting solves confidentiality', 'Answering an access question with encryption', 'It is an at-rest control only'],
+            ['Layout hides data', 'Offering a layout change as the control', 'FLS governs read everywhere'],
+            ['Apex respects FLS', 'Assuming SOQL enforces field permissions', 'It does not unless user mode is declared'],
+            ['Guest users are external users', 'Thinking each external person has permissions', 'One guest user per site, with per-record sharing beneath it'],
+            ['Restriction rules remove everything', 'Assuming they remove Apex sharing', 'They cannot, nor ownership, nor CRUD or FLS']
+          ]},
+          { t: 'callout', kind: 'tip', x: 'Read this table the week before the exam rather than the night before. These are recognition items, not recall items, and they are best internalised as a list you can scan while reading a question. If a question makes you hesitate, it is usually because one of these is in play.' },
+          { t: 'p', x: 'And one process habit that reliably adds marks: eliminate before you commit. Five options, one clearly wrong — remove it and the question becomes easier, because you have stopped comparing against a wrong answer. Most candidates lose marks by reading all five options and being attracted by the second-best one.' }
+        ]
+      },
+      {
+        title: 'Timing, and the unscored questions',
+        mins: 8,
+        blocks: [
+          { t: 'p', x: 'The exam is 60 scored questions plus up to 5 unscored, in 120 minutes. That is roughly two minutes per question, and the arithmetic is worth holding onto.' },
+          { t: 'list', items: [
+            'Two minutes per question on average means a question you cannot place within ninety seconds is costing you. Flag it and move.',
+            'The unscored questions are pre-release items, typically on a recent feature. They do not affect the score, so answer them the same way and do not agonise.',
+            'Because they are unscored, a question on a feature you have never heard of is almost certainly one of them — a reason to select the most defensible answer rather than to worry.',
+            'Scenario questions with a long preamble are usually shorter to answer than they look. The requirement is usually in the last two lines.',
+            'Do not leave the last ten questions. Unanswered is always zero, and a 60/65 response at 58% is 92%, which is comfortable — but only if you answer them.'
+          ]},
+          { t: 'callout', kind: 'tip', x: 'The two-minute rule has a corollary that matters on the domain-weighting: Access to Records is 39% of the exam, so it is roughly 23 scored questions and it deserves proportionally more of your revision time than a domain you find easy. Weight your practice by domain, not by comfort.' },
+          { t: 'p', x: 'One last piece of practical advice specific to this exam: the questions are written by practitioners describing real designs, so the most defensible answer is almost always the one a competent architect would actually build, not the one that is technically possible. Where an option is technically achievable but operationally irresponsible — deleting records rather than inactivating them, View All to solve a scoping problem — it is the distractor.' }
+        ]
+      },
+      {
+        title: 'Building the revision plan from your own data',
+        mins: 7,
+        blocks: [
+          { t: 'p', x: 'Generic revision advice is worth little. What works is a plan built from your own error pattern, and you can only get that by practising properly.' },
+          { t: 'num', items: [
+            'Take three full-length practice attempts under time pressure. Not quizzes — full sets, timed.',
+            'For every question you got wrong or guessed, record the domain, the question shape from the table above, and the reason: unknown mechanism, misread requirement, or a trap you did not recognise.',
+            'The reason matters more than the topic. "Unknown mechanism" means revise that phase; "misread requirement" means practise reading; "trap not recognised" means re-read the trap table, and it will pay off more than any phase revision.',
+            'Weight the remaining effort by domain, using the exam weighting and your error rate together.',
+            'Re-attempt only the questions you got wrong, three days later, timed. If you get them right, the gap is closed; if not, it is a genuine gap and that phase needs work.',
+            'In the final week, practise recognising question shapes rather than recalling mechanisms. Recognition is what runs under time pressure.'
+          ]},
+          { t: 'callout', kind: 'tip', x: 'Step six is the one candidates skip, and it is the most valuable. At speed, you are not retrieving mechanisms — you are recognising shapes and eliminating. Practising recognition trains the skill the exam actually tests.' },
+          {
+            t: 'ex',
+            id: '20.1',
+            title: 'The Vantage capstone design',
+            obj: 'Produce the complete access model for Vantage Health Group and defend every choice in a written rationale.',
+            stars: 4,
+            steps: [
+              'Build the data model: five objects, relationships, ownership rules, and the blast radius of the two most consequential relationships.',
+              'Set and justify the OWD for every object. Write the recalculation plan for each change.',
+              'Design the role hierarchy and state explicitly what it does not cover.',
+              'Author every sharing rule with its criteria, its target type, and its expected match count.',
+              'Map all twelve requirements from the scenario to a mechanism, using the question-shape table as your checklist.',
+              'Write the permissions and FLS model from the sensitivity matrix, including the exclusions.',
+              'Specify the Apex managed sharing: why it is necessary, the grant, the revocation, and the reconciliation.',
+              'Design the external model for the six external personas with the verification plan.',
+              'Produce the skew analysis and the change wave plan with rollback positions.',
+              'Write the residual risk section and the evidence section.'
+            ],
+            verify: 'A single coherent design document in which every mechanism traces to a stated requirement, the residual risk and evidence sections are present, and a reviewer could reconstruct the org from the document.'
+          },
+          {
+            t: 'ex',
+            id: '20.2',
+            title: 'Build your error-pattern register',
+            obj: 'Take three timed practice attempts and produce a revision plan derived from your own errors rather than from the syllabus.',
+            stars: 4,
+            steps: [
+              'Complete three full timed practice sets. Record your score and the time per question.',
+              'For every incorrect or guessed answer, record the domain, the question shape, and the reason: unknown mechanism, misread requirement, or unrecognised trap.',
+              'Tabulate the results by domain and by reason. Compare your error rate per domain against the exam weighting.',
+              'Produce the revision plan: which phases to re-read, which trap entries to re-learn, and where to spend the remaining hours.',
+              'Re-attempt the missed questions three days later, timed. Record whether each is now correct.',
+              'Write the final-week plan: recognition practice, weighted by domain, with no new material.'
+            ],
+            verify: 'A tabulated error pattern by domain and reason, a plan justified by that data rather than by the syllabus, and a re-attempt result for every missed question.'
+          },
+          {
+            t: 'ex',
+            id: '20.3',
+            title: 'The full-stack scenario drill',
+            obj: 'Answer twelve scenarios covering all four domains, with the mechanism, the trap avoided, and the alternative you rejected.',
+            stars: 4,
+            steps: [
+              'Write or source twelve scenarios weighted to the exam: eight on Access to Records, five on Permissions, four on Implications, three on Other Data — then trim to twelve keeping the weighting.',
+              'For each, name the mechanism, the question shape it matches, and the trap you avoided.',
+              'For each, name a plausible alternative and say why you rejected it. This step is what makes the revision durable.',
+              'Time yourself at two minutes per question and flag anything you could not place within ninety seconds.',
+              'Review the flags only, and for each identify whether the cause was knowledge or reading.',
+              'Produce a final list of the eight things you would re-read, in priority order.'
+            ],
+            verify: 'Twelve scenarios answered under time with a rejected alternative for each, a timed flag list, and a cause identified for every flag. The rejected alternatives are the mark of genuine understanding.'
+          },
+          { t: 'selfcheck', q: 'In a scenario, an option offers to solve a scoping problem with View All. How should you reason?', a: 'Reject it, unless the requirement genuinely is "access to every record of this object regardless of why". View All removes sharing as a boundary for that user, which is almost never what a scoping requirement intends and cannot be undone by anything except another permission change. The defensible answer is normally the narrower mechanism — a criteria-based rule, a role, a team — because it expresses the actual requirement. Recognising that an option is technically achievable but operationally irresponsible is exactly the judgement the exam rewards.' }
+        ]
+      }
+    ],
+    quiz: {
+      title: 'Phase 20 Quiz · Capstone & Certification Prep',
+      mins: 8,
+      questions: [
+        {
+          q: 'Two requirements: "access to my team’s records" and "access to a specific colleague’s records". Which mechanisms?',
+          opts: ['Both the role hierarchy', 'Role hierarchy; group plus criteria-based rule', 'Both group plus rule', 'Both Apex managed sharing'],
+          a: 1,
+          why: '"Report to them" is the hierarchy. "Need to see them" is not — lateral access needs a group, a team or Apex.'
+        },
+        {
+          q: 'A requirement is "everyone except the contractor role". Which mechanism?',
+          opts: ['A sharing rule with a NOT criterion', 'A restriction rule, or a permission set group for field-level exclusions'],
+          a: 1,
+          why: 'Sharing rules only add. Restriction rules remove from declarative sources, and permission set groups intersect field permissions within a group.'
+        },
+        {
+          q: 'Access is conditional on an approval record being active. Which mechanism?',
+          opts: ['A criteria-based sharing rule on a checkbox', 'Apex managed sharing, with revocation on deactivation', 'A permission set group', 'A team'],
+          a: 1,
+          why: 'The condition lives on a different record and has a lifecycle, which no field criterion can express. And it needs the revocation path, because grants do not expire.'
+        },
+        {
+          q: 'Why is View All usually the wrong answer to a scoping question?',
+          opts: ['It is slower', 'It removes sharing as a boundary for that user and cannot be undone by anything except another permission change'],
+          a: 1,
+          why: 'Technically achievable but operationally irresponsible — the classic distractor shape. The narrower mechanism usually expresses the actual requirement.'
+        },
+        {
+          q: 'True or false: the record owner always has access to their own record, regardless of OWD.',
+          opts: ['True', 'False'],
+          a: 0,
+          why: 'Owner-based implicit access is always present. Forgetting it is one of the highest-frequency analytical errors in the exam.'
+        },
+        {
+          q: 'A requirement says managers should see their reports’ records but the reports’ manager should see nothing. Which mechanism?',
+          opts: ['The role hierarchy with a restriction rule excluding the manager’s role', 'A permission set group', 'Apex', 'A queue'],
+          a: 0,
+          why: 'The first half is the hierarchy; the second is an exclusion the hierarchy cannot express, so a restriction rule or a permission set group is needed on top.'
+        },
+        {
+          q: 'Which is NOT a correct statement about restriction rules?',
+          opts: ['They can remove sharing-rule access', 'They can remove Apex managed sharing', 'They can remove role hierarchy access', 'They can remove team-based access'],
+          a: 1,
+          why: 'They cannot remove Apex managed sharing, nor ownership, nor CRUD or FLS. That limitation is why a restriction rule alone is not a confidentiality control.'
+        },
+        {
+          q: 'A field must be hidden from brokers who can see the record. Best mechanism?',
+          opts: ['Page layout', 'FLS, or field masking for Winter ’27', 'A sharing rule', 'The OWD'],
+          a: 1,
+          why: 'FLS governs read everywhere including APIs; masking preserves usability while hiding the value. Layout is not a control.'
+        },
+        {
+          q: 'Why is "they need to see them" a signal against the role hierarchy?',
+          opts: ['It is grammatically informal', 'The hierarchy asserts a reporting relationship, and a need-to-see requirement is not one'],
+          a: 1,
+          why: 'Reading the relationship the requirement asserts tells you the mechanism before you finish reading the question.'
+        },
+        {
+          q: 'Apex code queries a field the user cannot read and the value comes back. Why?',
+          opts: ['A sharing rule granted it', 'Apex does not enforce FLS unless user mode is declared'],
+          a: 1,
+          why: 'This is the most important fact about FLS in code, and the reason for the Summer ’26 default change.'
+        },
+        {
+          q: 'How long should you spend per question on average?',
+          opts: ['About one minute', 'About two minutes, flagging anything you cannot place within ninety seconds'],
+          a: 1,
+          why: '60 scored questions in 120 minutes. A question you cannot place within ninety seconds is costing you; flag it and move.'
+        },
+        {
+          q: 'Which domain should get proportionally the most revision time?',
+          opts: ['Access to Records, at 39%', 'Access to Other Data, at 16%', 'Whichever you find easiest', 'All domains equally'],
+          a: 0,
+          why: 'Weight your practice by domain and by your own error rate together — roughly 23 scored questions on Access to Records.'
+        },
+        {
+          q: 'Why does eliminating options before committing add marks?',
+          opts: ['It saves reading time', 'It stops you comparing against a wrong answer, which is where second-best options attract candidates'],
+          a: 1,
+          why: 'Most lost marks come from being attracted by the second-best option, not from failing to know the right one. Five options, one clearly wrong — remove it first.'
+        }
+      ]
+    }
+  }
+];

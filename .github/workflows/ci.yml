@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ------------------------------------------------------------------ #
+  # Local checks. Node built-ins only, so there is no dependency install
+  # and the job cannot fail because of a registry outage. This is the
+  # gate that has to stay green: it syntax-checks the authored data and
+  # proves the committed site data still matches docs/assets/curriculum.js
+  # and docs/assets/answers.js.
+  # ------------------------------------------------------------------ #
+  validate:
+    name: Validate curriculum, answers and site data
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+
+      - name: Syntax check the authored data
+        run: npm run check:syntax
+
+      - name: Site data is up to date
+        run: npm run site:check
+
+  # ------------------------------------------------------------------ #
+  # Org check. Needs a Dev Hub, so it is manual only and is deliberately
+  # not a dependency of the Pages job: a missing scratch org must never
+  # be the reason the study site is offline.
+  #
+  # This previews manifest/package.xml instead of deploying it, because
+  # force-app/ is the roadmap's target architecture rather than authored
+  # source: the manifest names the classes, permission sets and sharing
+  # metadata the course builds. Once you author those files, switch this
+  # to `sf project deploy start --source-dir force-app` plus an Apex test
+  # run, as in the other academy repos.
+  # ------------------------------------------------------------------ #
+  org:
+    name: Preview the metadata manifest on a scratch org
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+
+      - name: Install Salesforce CLI
+        run: npm install --global @salesforce/cli
+
+      - name: Authorize Dev Hub
+        uses: salesforce/actions/setup-sfdx@v1
+
+      - name: Create scratch org
+        uses: salesforce/actions/create-scratch-org@v1
+        with:
+          scratch-org-file: config/scratch-def.json
+          org-name: svas
+          days: 1
+          no-empty-scratch-org: true
+
+      - name: Preview the manifest
+        run: sf project deploy preview --manifest manifest/package.xml --target-org svas --wait 20
+
+      - name: Delete scratch org
+        if: always()
+        run: sf org delete scratch --target-org svas --no-prompt
