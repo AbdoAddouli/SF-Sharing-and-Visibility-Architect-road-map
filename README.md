@@ -98,7 +98,8 @@ All routes are hash-based, so any screen can be bookmarked or shared. Press `/` 
 
 ## Progress, bookmarks & certificate
 
-- Progress = lessons completed + quizzes passed + exercises attempted. It is stored under the `sfsharing-` key prefix in `localStorage`.
+- Progress = lessons completed + quizzes passed + exercises attempted. It is stored in `localStorage` under the `sfsharing-v1` key — deliberately *not* the unified site's `abdo-academy-v1` key, because every academy is served from the same `github.io` origin and sharing one key would let the two sites overwrite each other's progress.
+- The theme preference is the one thing that *is* shared (`abdo-academy-theme`), so one toggle covers all twelve academies.
 - Clearing site data resets progress. There is no sync, no account and no server.
 - The certificate view is a self-made summary for motivation. Salesforce certification is awarded only by Salesforce after a proctored exam.
 
@@ -125,8 +126,8 @@ All routes are hash-based, so any screen can be bookmarked or shared. Press `/` 
 │   └── guide/              20 authored phase guides (01-…20-…md)
 ├── config/scratch-def.json Enterprise scratch org for the scenario lab
 ├── manifest/package.xml    the target metadata architecture of the scenario org
-├── force-app/              where you implement the scenario (empty by design)
-└── .github/workflows/      ci.yml (checks) and pages.yml (deploys docs/)
+├── force-app/README.md    the scenario lab: what to build, and when to flip CI to deploy it
+└── .github/workflows/     ci.yml (syntax + generated-data freshness, manual org preview)
 ```
 
 **Edit `docs/assets/curriculum.js` and `docs/assets/answers.js`. Never edit `curricula.js`, `answers/` or `guides/`** — they are generated and CI fails if they drift.
@@ -182,16 +183,19 @@ Output is deterministic — no timestamps in the data files — so `--check` nev
 
 ## Deployment
 
-Published automatically by [`.github/workflows/pages.yml`](.github/workflows/pages.yml) on every push to `main`:
+Published with **legacy branch-based GitHub Pages**, exactly like the other academy roadmap
+repositories: *Settings &rarr; Pages &rarr; Source: Deploy from a branch &rarr; `main` / `/docs`*.
 
-1. `npm run site:check` proves the committed site data matches the authored data
-2. `actions/configure-pages` (with `enablement: true`, so the Pages site is created on first run)
-3. `docs/` is uploaded as the Pages artifact and deployed
+`docs/.nojekyll` stops Jekyll from ignoring the asset folders, so `docs/` is published byte-for-byte
+as committed — there is no build step in the publish path and no compiled artifact that could drift
+from the repository. Every push to `main` publishes within a minute or two:
 
-Nothing is compiled at deploy time, so the published artifact is byte-identical to what is in the repository. Live URL:
 **<https://abdoaddouli.github.io/SF-Sharing-and-Visibility-Architect-road-map/>**
 
-The CI in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) keeps the mandatory path dependency-free. The scratch-org job is `workflow_dispatch`-only on purpose: a Dev Hub being unavailable must never be a reason the study site goes dark.
+CI in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) is what keeps the published data honest:
+it fails the push if `docs/assets/curriculum.js`, `docs/assets/answers.js` and the committed generated
+bundle ever disagree. The scratch-org job is `workflow_dispatch`-only on purpose — a Dev Hub being
+unavailable must never be a reason the study site goes dark.
 
 ---
 

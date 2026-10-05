@@ -8,9 +8,13 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#128272;</text></svg>" />
   <link rel="stylesheet" href="assets/style.css" />
   <script>
+    /* Theme key is intentionally the same one the unified academy site uses:
+       every academy lives on the same github.io origin, so one toggle should
+       cover all of them. Progress uses its own private key instead - see
+       KEY in assets/app.js. */
     (function() {
       var t;
-      try { t = localStorage.getItem('sfsharing-theme'); } catch (e) {}
+      try { t = localStorage.getItem('abdo-academy-theme'); } catch (e) {}
       if (!t) t = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
       document.documentElement.setAttribute('data-theme', t);
     })();

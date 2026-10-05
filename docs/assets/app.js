@@ -45,7 +45,12 @@ function guideUrl(entry, mod) {
 
 /* ------------------------- progress store ------------------------- */
 
-const KEY = 'abdo-academy-v1';
+/* Standalone single-academy variant: the unified academy site keys its store
+   'abdo-academy-v1' and can read the same key for every academy. All academy
+   sites share the github.io origin, so one shared key would mean this site's
+   writes rewrote the unified site's store. Keep the progress keys private;
+   the theme key is deliberately still shared so one toggle covers all sites. */
+const KEY = 'sfsharing-v1';
 let store = load();
 
 function load() {
@@ -177,7 +182,11 @@ function resumePoint(entry) {
    them shared one by accident). On first run we adopt whatever progress we
    can match to this store so nothing is lost when you move to the academy. */
 
-const LEGACY_KEYS = ['devacademy-v1', 'scacademy-v1', 'sccacademy-v1', 'mcc-consultant-v1'];
+/* The unified academy site uses this list to adopt progress from the retired
+   per-academy sites. The legacy stores belong to *other* academies; their
+   unprefixed lesson ids ("01", "02", …) would match this academy's id map and
+   be adopted here, which would be worse than losing them. Nothing to migrate. */
+const LEGACY_KEYS = [];
 
 function migrateLegacy() {
   let existing;
@@ -231,7 +240,7 @@ function exportProgress() {
     const blob = new Blob([JSON.stringify(store, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = 'abdo-salesforce-academy-progress.json';
+    a.download = 'sharing-and-visibility-architect-progress.json';
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
     toast('Progress exported &#11015;&#65039;');
